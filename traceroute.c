@@ -73,6 +73,8 @@ static double time_diff_ms(struct timeval *start, struct timeval *end) {
 /*
  * select() on Linux updates the timeout struct with remaining time, so
  * looping on non-matching packets correctly consumes the per-probe budget.
+ *
+ * is_dest_out: 1 = ICMP Echo Reply (destination reached), 0 = Time Exceeded.
  */
 static int wait_for_response(int sockfd, uint16_t id, int seq,
                              struct sockaddr_in *from_addr,
@@ -127,6 +129,24 @@ static int wait_for_response(int sockfd, uint16_t id, int seq,
                 *is_dest_out = 1;
                 return 1;
             }
+        } else if (icmp->type == ICMP_TIME_EXCEEDED) {
+            /* The router embeds the original IP header + first 8 bytes of the
+             * original ICMP header so we can match the reply to our probe. */
+            int nested_offset = ip_len + (int)sizeof(struct icmphdr);
+            if (bytes < nested_offset + (int)sizeof(struct iphdr))
+                continue;
+            struct iphdr *orig_ip     = (struct iphdr *)(buf + nested_offset);
+            int           orig_ip_len = orig_ip->ihl * 4;
+            if (bytes < nested_offset + orig_ip_len + (int)sizeof(struct icmphdr))
+                continue;
+            struct icmphdr *orig_icmp =
+                (struct icmphdr *)(buf + nested_offset + orig_ip_len);
+            if (ntohs(orig_icmp->un.echo.id) == id &&
+                ntohs(orig_icmp->un.echo.sequence) == (uint16_t)seq) {
+                *rtt_out     = time_diff_ms(send_time, &recv_time);
+                *is_dest_out = 0;
+                return 1;
+            }
         }
         /* Not our packet; keep waiting with remaining timeout. */
     }
@@ -145,7 +165,7 @@ int traceroute(char *target, struct s_options *opts) {
 
     struct timeval send_time;
     gettimeofday(&send_time, NULL);
-    send_probe(sockfd, &dest, 64, 0, id);
+    send_probe(sockfd, &dest, 1, 0, id);
 
     struct sockaddr_in from;
     double rtt     = 0;
@@ -155,7 +175,8 @@ int traceroute(char *target, struct s_options *opts) {
     if (got == 1) {
         char from_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &from.sin_addr, from_ip, sizeof(from_ip));
-        printf("%s  %.3f ms\n", from_ip, rtt);
+        printf("%s  %.3f ms  %s\n", from_ip, rtt,
+               is_dest ? "(destination)" : "(time exceeded)");
     } else {
         printf("*\n");
     }
