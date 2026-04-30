@@ -1,34 +1,8 @@
 #include "ft_traceroute.h"
 
-static int create_icmp_socket(void) {
-    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if (sockfd < 0) {
-        perror("ft_traceroute: socket");
-        return -1;
-    }
-    return sockfd;
-}
-
-static int resolve_target(const char *target, struct sockaddr_in *dest) {
-    struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family   = AF_INET;
-    hints.ai_socktype = SOCK_RAW;
-    hints.ai_protocol = IPPROTO_ICMP;
-
-    int ret = getaddrinfo(target, NULL, &hints, &res);
-    if (ret != 0) {
-        fprintf(stderr, "ft_traceroute: %s: %s\n", target, gai_strerror(ret));
-        return -1;
-    }
-    *dest = *(struct sockaddr_in *)res->ai_addr;
-    freeaddrinfo(res);
-    return 0;
-}
-
 static unsigned short checksum(void *data, int len) {
     unsigned short *buf = data;
-    unsigned long   sum = 0;
+    unsigned long  sum  = 0;
 
     while (len > 1) {
         sum += *buf++;
@@ -44,7 +18,7 @@ static unsigned short checksum(void *data, int len) {
 static void send_probe(int sockfd, struct sockaddr_in *dest,
                        int ttl, int seq, uint16_t id) {
     if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0) {
-        perror("setsockopt IP_TTL");
+        fprintf(stderr, "setsockopt IP_TTL: %s\n", strerror(errno));
         return;
     }
 
@@ -71,17 +45,23 @@ static double time_diff_ms(struct timeval *start, struct timeval *end) {
 }
 
 /*
- * select() on Linux updates the timeout struct with remaining time, so
- * looping on non-matching packets correctly consumes the per-probe budget.
+ * Returns 1 if a matching response arrived (fills from_addr, rtt_out,
+ * is_dest_out). Returns 0 on timeout. Returns -1 on fatal error.
  *
  * is_dest_out: 1 = ICMP Echo Reply (destination reached), 0 = Time Exceeded.
+ *
+ * select() on Linux updates the timeout struct with remaining time, so
+ * looping on non-matching packets correctly consumes the per-probe budget.
  */
 static int wait_for_response(int sockfd, uint16_t id, int seq,
                              struct sockaddr_in *from_addr,
                              struct timeval *send_time,
                              double *rtt_out, int *is_dest_out,
                              int timeout_sec) {
-    struct timeval timeout = { timeout_sec, 0 };
+    struct timeval timeout;
+    timeout.tv_sec  = timeout_sec;
+    timeout.tv_usec = 0;
+
     char      buf[MAX_PACKET_SIZE];
     socklen_t addr_len;
 
@@ -130,8 +110,6 @@ static int wait_for_response(int sockfd, uint16_t id, int seq,
                 return 1;
             }
         } else if (icmp->type == ICMP_TIME_EXCEEDED) {
-            /* The router embeds the original IP header + first 8 bytes of the
-             * original ICMP header so we can match the reply to our probe. */
             int nested_offset = ip_len + (int)sizeof(struct icmphdr);
             if (bytes < nested_offset + (int)sizeof(struct iphdr))
                 continue;
@@ -152,10 +130,112 @@ static int wait_for_response(int sockfd, uint16_t id, int seq,
     }
 }
 
+static int resolve_target(const char *target, struct sockaddr_in *dest) {
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_RAW;
+    hints.ai_protocol = IPPROTO_ICMP;
+
+    int ret = getaddrinfo(target, NULL, &hints, &res);
+    if (ret != 0) {
+        fprintf(stderr, "ft_traceroute: %s: %s\n", target, gai_strerror(ret));
+        return -1;
+    }
+    *dest = *(struct sockaddr_in *)res->ai_addr;
+    freeaddrinfo(res);
+    return 0;
+}
+
+static int create_icmp_socket(void) {
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (sockfd < 0) {
+        fprintf(stderr, "ft_traceroute: socket: %s\n", strerror(errno));
+        return -1;
+    }
+    return sockfd;
+}
+
+static void print_hop_line(int ttl, const char *hop_ip,
+                           const double *rtts, const int *received,
+                           int nqueries) {
+    printf("%2d  ", ttl);
+    if (hop_ip[0])
+        printf("%s", hop_ip);
+    for (int i = 0; i < nqueries; i++) {
+        if (received[i])
+            printf("  %.3f ms", rtts[i]);
+        else
+            printf("  %s", (hop_ip[0] || i > 0) ? "*" : "* ");
+    }
+    printf("\n");
+    fflush(stdout);
+}
+
+static int run_hop(int sockfd, struct sockaddr_in *dest, int ttl,
+                   uint16_t id, struct s_options *opts,
+                   char *hop_ip, double *rtts, int *received) {
+    int reached = 0;
+
+    hop_ip[0] = '\0';
+    for (int probe = 0; probe < opts->nqueries; probe++) {
+        int seq = (ttl - 1) * opts->nqueries + probe;
+
+        struct timeval send_time;
+        gettimeofday(&send_time, NULL);
+        send_probe(sockfd, dest, ttl, seq, id);
+
+        struct sockaddr_in from;
+        double rtt     = 0;
+        int    is_dest = 0;
+        int    got = wait_for_response(sockfd, id, seq,
+                                       &from, &send_time,
+                                       &rtt, &is_dest,
+                                       opts->timeout_sec);
+        if (got == 1) {
+            if (hop_ip[0] == '\0')
+                snprintf(hop_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
+            rtts[probe]     = rtt;
+            received[probe] = 1;
+            if (is_dest)
+                reached = 1;
+        } else {
+            rtts[probe]     = 0;
+            received[probe] = 0;
+        }
+    }
+    return reached;
+}
+
+static void print_header(const char *target, const char *dest_ip,
+                         const struct s_options *opts) {
+    printf("traceroute to %s (%s), %d hops max, %d byte packets\n",
+           target, dest_ip, opts->max_ttl,
+           (int)(sizeof(struct icmphdr) + PROBE_DATA_SIZE));
+}
+
+static void run_traceroute(int sockfd, struct sockaddr_in *dest,
+                           uint16_t id, struct s_options *opts) {
+    for (int ttl = 1; ttl <= opts->max_ttl; ttl++) {
+        char   hop_ip[INET_ADDRSTRLEN];
+        double rtts[opts->nqueries];
+        int    received[opts->nqueries];
+
+        int reached = run_hop(sockfd, dest, ttl, id, opts,
+                              hop_ip, rtts, received);
+        print_hop_line(ttl, hop_ip, rtts, received, opts->nqueries);
+        if (reached)
+            break;
+    }
+}
+
 int traceroute(char *target, struct s_options *opts) {
     struct sockaddr_in dest;
     if (resolve_target(target, &dest) < 0)
         return 1;
+
+    char dest_ip[INET_ADDRSTRLEN];
+    snprintf(dest_ip, sizeof(dest_ip), "%s", inet_ntoa(dest.sin_addr));
 
     int sockfd = create_icmp_socket();
     if (sockfd < 0)
@@ -163,23 +243,8 @@ int traceroute(char *target, struct s_options *opts) {
 
     uint16_t id = (uint16_t)(getpid() & 0xFFFF);
 
-    struct timeval send_time;
-    gettimeofday(&send_time, NULL);
-    send_probe(sockfd, &dest, 1, 0, id);
-
-    struct sockaddr_in from;
-    double rtt     = 0;
-    int    is_dest = 0;
-    int    got = wait_for_response(sockfd, id, 0, &from, &send_time,
-                                   &rtt, &is_dest, opts->timeout_sec);
-    if (got == 1) {
-        char from_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &from.sin_addr, from_ip, sizeof(from_ip));
-        printf("%s  %.3f ms  %s\n", from_ip, rtt,
-               is_dest ? "(destination)" : "(time exceeded)");
-    } else {
-        printf("*\n");
-    }
+    print_header(target, dest_ip, opts);
+    run_traceroute(sockfd, &dest, id, opts);
 
     close(sockfd);
     return 0;
