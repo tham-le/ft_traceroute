@@ -5,7 +5,9 @@ static void help(void) {
            "Print the route packets trace to network host.\n\n"
            " Options:\n"
            "  -m <max_ttl>  Set the max number of hops (default: 30)\n"
-           "  -?, --help    Give this help list\n");
+           "  -q <nqueries> Probes per hop (default: 3, max: %d)\n"
+           "  -?, --help    Give this help list\n",
+           MAX_NQUERIES);
     exit(0);
 }
 
@@ -37,6 +39,9 @@ char *parse_arguments(int argc, char *argv[], struct s_options *opts) {
             help();
         } else if (strcmp(argv[i], "-m") == 0) {
             opts->max_ttl = parse_int(need_arg(argc, argv, &i, "-m"), 1, 255, "-m");
+        } else if (strcmp(argv[i], "-q") == 0) {
+            opts->nqueries = parse_int(need_arg(argc, argv, &i, "-q"),
+                                       1, MAX_NQUERIES, "-q");
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "ft_traceroute: invalid option '%s'\n", argv[i]);
             fprintf(stderr, "Try 'ft_traceroute --help' for more information.\n");
