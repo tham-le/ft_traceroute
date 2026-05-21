@@ -15,6 +15,7 @@
 #include <netinet/ip_icmp.h>
 
 #define DEFAULT_MAX_TTL      30
+#define DEFAULT_FIRST_TTL     1
 #define DEFAULT_NQUERIES      3
 #define DEFAULT_TIMEOUT_SEC   5
 #define PROBE_DATA_SIZE      40
@@ -29,6 +30,7 @@ struct s_options {
     int timeout_sec;
     int window_size;
     int do_dns;
+    int first_ttl;
 };
 
 int   traceroute(char *target, struct s_options *opts);

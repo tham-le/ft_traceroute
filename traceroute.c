@@ -323,12 +323,12 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
     }
     memset(hops, 0, (size_t)(opts->max_ttl + 1) * sizeof(t_hop));
 
-    int next_to_send  = 1;
-    int next_to_print = 1;
+    int next_to_send  = opts->first_ttl;
+    int next_to_print = opts->first_ttl;
     int dest_ttl      = opts->max_ttl;
     int in_flight     = 0;
 
-    while (next_to_print <= opts->max_ttl) {
+    while (next_to_print <= dest_ttl) {
         /* Fill the send window. */
         while (in_flight < opts->window_size && next_to_send <= dest_ttl) {
             send_hop_probes(sockfd, dest, next_to_send, id,
