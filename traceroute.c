@@ -291,11 +291,19 @@ static int resolve_target(const char *target, struct sockaddr_in *dest) {
     return 0;
 }
 
-static int create_icmp_socket(void) {
+static int create_icmp_socket(const struct s_options *opts) {
     int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (sockfd < 0) {
         fprintf(stderr, "ft_traceroute: socket: %s\n", strerror(errno));
         return -1;
+    }
+    if (opts->tos) {
+        int tos = opts->tos;
+        if (setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
+            fprintf(stderr, "ft_traceroute: IP_TOS: %s\n", strerror(errno));
+            close(sockfd);
+            return -1;
+        }
     }
     return sockfd;
 }
@@ -407,7 +415,7 @@ int traceroute(char *target, struct s_options *opts) {
     char dest_ip[INET_ADDRSTRLEN];
     snprintf(dest_ip, sizeof(dest_ip), "%s", inet_ntoa(dest.sin_addr));
 
-    int sockfd = create_icmp_socket();
+    int sockfd = create_icmp_socket(opts);
     if (sockfd < 0)
         return 1;
 
