@@ -47,7 +47,7 @@ static void send_probe(int sockfd, struct sockaddr_in *dest,
     icmp->checksum         = checksum(packet, sizeof(packet));
     if (sendto(sockfd, packet, sizeof(packet), 0,
                (struct sockaddr *)dest, sizeof(*dest)) < 0)
-        perror("sendto");
+        fprintf(stderr, "ft_traceroute: sendto: %s\n", strerror(errno));
 }
 
 static double time_diff_ms(struct timeval *start, struct timeval *end) {
@@ -300,11 +300,12 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
                             uint16_t id, struct s_options *opts) {
     long timeout_ms = opts->timeout_sec * 1000L;
 
-    t_hop *hops = calloc((size_t)(opts->max_ttl + 1), sizeof(t_hop));
+    t_hop *hops = malloc((size_t)(opts->max_ttl + 1) * sizeof(t_hop));
     if (!hops) {
-        perror("calloc");
+        fprintf(stderr, "ft_traceroute: malloc: %s\n", strerror(errno));
         return;
     }
+    memset(hops, 0, (size_t)(opts->max_ttl + 1) * sizeof(t_hop));
 
     int next_to_send  = 1;
     int next_to_print = 1;
@@ -397,15 +398,15 @@ int traceroute(char *target, struct s_options *opts) {
     uint16_t id = (uint16_t)(getpid() & 0xFFFF);
 
     print_header(target, dest_ip, opts);
-
-    struct timeval t0, t1;
-    gettimeofday(&t0, NULL);
+    //    struct timeval t0, t1;
+    // gettimeofday(&t0, NULL);
     run_traceroute(sockfd, &dest, id, opts);
-    gettimeofday(&t1, NULL);
+    // gettimeofday(&t1, NULL);
 
-    double elapsed = (t1.tv_sec  - t0.tv_sec)  * 1000.0
-                   + (t1.tv_usec - t0.tv_usec) / 1000.0;
-    fprintf(stderr, "total time: %.0f ms\n", elapsed);
+    // double elapsed = (t1.tv_sec  - t0.tv_sec)  * 1000.0
+    //                + (t1.tv_usec - t0.tv_usec) / 1000.0;
+    // fprintf(stderr, "total time: %.0f ms\n", elapsed);
+
 
     close(sockfd);
     return 0;
