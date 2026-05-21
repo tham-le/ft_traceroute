@@ -34,6 +34,7 @@ struct s_options {
     int first_ttl;
     int   tos;
     char *source;
+    char *iface;
 };
 
 int   traceroute(char *target, struct s_options *opts);
