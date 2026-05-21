@@ -7,6 +7,7 @@ static void help(void) {
            "  -m <max_ttl>  Set the max number of hops (default: 30)\n"
            "  -q <nqueries> Probes per hop (default: 3, max: %d)\n"
            "  -w <timeout>  Seconds to wait per probe (default: 5)\n"
+           "  -N <squeries> Simultaneous probes in flight (default: 16)\n"
            "  -?, --help    Give this help list\n",
            MAX_NQUERIES);
     exit(0);
@@ -46,6 +47,9 @@ char *parse_arguments(int argc, char *argv[], struct s_options *opts) {
         } else if (strcmp(argv[i], "-w") == 0) {
             opts->timeout_sec = parse_int(need_arg(argc, argv, &i, "-w"),
                                           1, 60, "-w");
+        } else if (strcmp(argv[i], "-N") == 0) {
+            opts->window_size = parse_int(need_arg(argc, argv, &i, "-N"),
+                                          1, 128, "-N");
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "ft_traceroute: invalid option '%s'\n", argv[i]);
             fprintf(stderr, "Try 'ft_traceroute --help' for more information.\n");
