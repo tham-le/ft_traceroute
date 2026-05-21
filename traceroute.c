@@ -314,7 +314,7 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
 
     while (next_to_print <= opts->max_ttl) {
         /* Fill the send window. */
-        while (in_flight < WINDOW_SIZE && next_to_send <= dest_ttl) {
+        while (in_flight < opts->window_size && next_to_send <= dest_ttl) {
             send_hop_probes(sockfd, dest, next_to_send, id,
                             opts->nqueries, timeout_ms, &hops[next_to_send]);
             in_flight++;
