@@ -1,8 +1,24 @@
 #include "ft_traceroute.h"
 
+typedef struct {
+    struct timeval send_time;
+    struct timeval deadline;
+    int            done;      /* timed out or reply received */
+    int            got_reply;
+    double         rtt;
+    int            is_dest;
+} t_probe;
+
+typedef struct {
+    t_probe probes[MAX_NQUERIES];
+    char    hop_ip[INET_ADDRSTRLEN];
+    int     done;
+    int     reached;
+} t_hop;
+
 static unsigned short checksum(void *data, int len) {
     unsigned short *buf = data;
-    unsigned long  sum  = 0;
+    unsigned long   sum = 0;
 
     while (len > 1) {
         sum += *buf++;
@@ -21,22 +37,17 @@ static void send_probe(int sockfd, struct sockaddr_in *dest,
         fprintf(stderr, "setsockopt IP_TTL: %s\n", strerror(errno));
         return;
     }
-
     char packet[sizeof(struct icmphdr) + PROBE_DATA_SIZE];
     memset(packet, 0, sizeof(packet));
-
     struct icmphdr *icmp   = (struct icmphdr *)packet;
     icmp->type             = ICMP_ECHO;
     icmp->code             = 0;
     icmp->un.echo.id       = htons(id);
     icmp->un.echo.sequence = htons((uint16_t)seq);
-    icmp->checksum         = 0;
     icmp->checksum         = checksum(packet, sizeof(packet));
-
     if (sendto(sockfd, packet, sizeof(packet), 0,
-               (struct sockaddr *)dest, sizeof(*dest)) < 0) {
+               (struct sockaddr *)dest, sizeof(*dest)) < 0)
         perror("sendto");
-    }
 }
 
 static double time_diff_ms(struct timeval *start, struct timeval *end) {
@@ -44,90 +55,178 @@ static double time_diff_ms(struct timeval *start, struct timeval *end) {
          + (end->tv_usec - start->tv_usec) / 1000.0;
 }
 
-/*
- * Returns 1 if a matching response arrived (fills from_addr, rtt_out,
- * is_dest_out). Returns 0 on timeout. Returns -1 on fatal error.
- *
- * is_dest_out: 1 = ICMP Echo Reply (destination reached), 0 = Time Exceeded.
- *
- * select() on Linux updates the timeout struct with remaining time, so
- * looping on non-matching packets correctly consumes the per-probe budget.
- */
-static int wait_for_response(int sockfd, uint16_t id, int seq,
-                             struct sockaddr_in *from_addr,
-                             struct timeval *send_time,
-                             double *rtt_out, int *is_dest_out,
-                             int timeout_sec) {
-    struct timeval timeout;
-    timeout.tv_sec  = timeout_sec;
-    timeout.tv_usec = 0;
+static void timeval_add_ms(struct timeval *tv, long ms) {
+    tv->tv_usec += ms * 1000L;
+    tv->tv_sec  += tv->tv_usec / 1000000;
+    tv->tv_usec %= 1000000;
+}
 
-    char      buf[MAX_PACKET_SIZE];
-    socklen_t addr_len;
-
-    while (1) {
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(sockfd, &fds);
-
-        int ret = select(sockfd + 1, &fds, NULL, NULL, &timeout);
-        if (ret == 0)
-            return 0;
-        if (ret < 0) {
-            if (errno == EINTR)
-                continue;
-            return -1;
-        }
-
-        addr_len = sizeof(*from_addr);
-        ssize_t bytes = recvfrom(sockfd, buf, sizeof(buf), 0,
-                                 (struct sockaddr *)from_addr, &addr_len);
-        if (bytes < 0) {
-            if (errno == EINTR || errno == EAGAIN)
-                continue;
-            return -1;
-        }
-
-        struct timeval recv_time;
-        gettimeofday(&recv_time, NULL);
-
-        if (bytes < (ssize_t)sizeof(struct iphdr))
-            continue;
-
-        struct iphdr *ip     = (struct iphdr *)buf;
-        int           ip_len = ip->ihl * 4;
-
-        if (bytes < ip_len + (ssize_t)sizeof(struct icmphdr))
-            continue;
-
-        struct icmphdr *icmp = (struct icmphdr *)(buf + ip_len);
-
-        if (icmp->type == ICMP_ECHOREPLY) {
-            if (ntohs(icmp->un.echo.id) == id &&
-                ntohs(icmp->un.echo.sequence) == (uint16_t)seq) {
-                *rtt_out     = time_diff_ms(send_time, &recv_time);
-                *is_dest_out = 1;
-                return 1;
-            }
-        } else if (icmp->type == ICMP_TIME_EXCEEDED) {
-            int nested_offset = ip_len + (int)sizeof(struct icmphdr);
-            if (bytes < nested_offset + (int)sizeof(struct iphdr))
-                continue;
-            struct iphdr *orig_ip     = (struct iphdr *)(buf + nested_offset);
-            int           orig_ip_len = orig_ip->ihl * 4;
-            if (bytes < nested_offset + orig_ip_len + (int)sizeof(struct icmphdr))
-                continue;
-            struct icmphdr *orig_icmp =
-                (struct icmphdr *)(buf + nested_offset + orig_ip_len);
-            if (ntohs(orig_icmp->un.echo.id) == id &&
-                ntohs(orig_icmp->un.echo.sequence) == (uint16_t)seq) {
-                *rtt_out     = time_diff_ms(send_time, &recv_time);
-                *is_dest_out = 0;
-                return 1;
-            }
-        }
-        /* Not our packet; keep waiting with remaining timeout. */
+static void send_hop_probes(int sockfd, struct sockaddr_in *dest,
+                             int ttl, uint16_t id, int nqueries,
+                             long timeout_ms, t_hop *hop) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    int seq_base = (ttl - 1) * nqueries;
+    for (int p = 0; p < nqueries; p++) {
+        t_probe *pr  = &hop->probes[p];
+        pr->send_time = now;
+        pr->deadline  = now;
+        timeval_add_ms(&pr->deadline, timeout_ms);
+        pr->done      = 0;
+        pr->got_reply = 0;
+        pr->rtt       = 0;
+        pr->is_dest   = 0;
+        send_probe(sockfd, dest, ttl, seq_base + p, id);
     }
+    hop->hop_ip[0] = '\0';
+    hop->done      = 0;
+    hop->reached   = 0;
+}
+
+static int hop_is_complete(t_hop *hop, int nqueries) {
+    for (int p = 0; p < nqueries; p++)
+        if (!hop->probes[p].done)
+            return 0;
+    return 1;
+}
+
+static void expire_probes(t_hop *hops, int from_ttl, int to_ttl,
+                           int nqueries, struct timeval *now) {
+    for (int ttl = from_ttl; ttl <= to_ttl; ttl++) {
+        if (hops[ttl].done)
+            continue;
+        for (int p = 0; p < nqueries; p++) {
+            t_probe *pr = &hops[ttl].probes[p];
+            if (pr->done)
+                continue;
+            long diff_us = (pr->deadline.tv_sec  - now->tv_sec)  * 1000000L
+                         + (pr->deadline.tv_usec - now->tv_usec);
+            if (diff_us <= 0)
+                pr->done = 1;
+        }
+    }
+}
+
+/*
+ * Computes time until the earliest pending probe deadline.
+ * Returns 0 if no pending probes exist, 1 otherwise (fills *out).
+ */
+static int next_deadline(t_hop *hops, int from_ttl, int to_ttl,
+                          int nqueries, struct timeval *now,
+                          struct timeval *out) {
+    struct timeval earliest;
+    int found = 0;
+
+    for (int ttl = from_ttl; ttl <= to_ttl; ttl++) {
+        if (hops[ttl].done)
+            continue;
+        for (int p = 0; p < nqueries; p++) {
+            t_probe *pr = &hops[ttl].probes[p];
+            if (pr->done)
+                continue;
+            if (!found || pr->deadline.tv_sec < earliest.tv_sec ||
+                (pr->deadline.tv_sec == earliest.tv_sec &&
+                 pr->deadline.tv_usec < earliest.tv_usec)) {
+                earliest = pr->deadline;
+                found    = 1;
+            }
+        }
+    }
+    if (!found)
+        return 0;
+
+    long diff_us = (earliest.tv_sec  - now->tv_sec)  * 1000000L
+                 + (earliest.tv_usec - now->tv_usec);
+    if (diff_us < 0)
+        diff_us = 0;
+    out->tv_sec  = diff_us / 1000000;
+    out->tv_usec = diff_us % 1000000;
+    return 1;
+}
+
+static void receive_response(int sockfd, t_hop *hops, uint16_t id,
+                              int nqueries, int from_ttl, int to_ttl) {
+    char               buf[MAX_PACKET_SIZE];
+    struct sockaddr_in from;
+    socklen_t          addr_len = sizeof(from);
+    ssize_t bytes = recvfrom(sockfd, buf, sizeof(buf), 0,
+                             (struct sockaddr *)&from, &addr_len);
+    if (bytes < 0)
+        return;
+
+    struct timeval recv_time;
+    gettimeofday(&recv_time, NULL);
+
+    if (bytes < (ssize_t)sizeof(struct iphdr))
+        return;
+    struct iphdr *ip     = (struct iphdr *)buf;
+    int           ip_len = ip->ihl * 4;
+    if (bytes < ip_len + (ssize_t)sizeof(struct icmphdr))
+        return;
+    struct icmphdr *icmp = (struct icmphdr *)(buf + ip_len);
+
+    int seq     = -1;
+    int is_dest = 0;
+
+    if (icmp->type == ICMP_ECHOREPLY) {
+        if (ntohs(icmp->un.echo.id) != id)
+            return;
+        seq     = ntohs(icmp->un.echo.sequence);
+        is_dest = 1;
+    } else if (icmp->type == ICMP_TIME_EXCEEDED) {
+        int nested = ip_len + (int)sizeof(struct icmphdr);
+        if (bytes < nested + (int)sizeof(struct iphdr))
+            return;
+        struct iphdr *orig_ip     = (struct iphdr *)(buf + nested);
+        int           orig_ip_len = orig_ip->ihl * 4;
+        if (bytes < nested + orig_ip_len + (int)sizeof(struct icmphdr))
+            return;
+        struct icmphdr *orig_icmp =
+            (struct icmphdr *)(buf + nested + orig_ip_len);
+        if (ntohs(orig_icmp->un.echo.id) != id)
+            return;
+        seq     = ntohs(orig_icmp->un.echo.sequence);
+        is_dest = 0;
+    } else {
+        return;
+    }
+
+    int ttl_idx   = seq / nqueries + 1;
+    int probe_idx = seq % nqueries;
+
+    if (ttl_idx < from_ttl || ttl_idx > to_ttl)
+        return;
+    if (probe_idx < 0 || probe_idx >= nqueries)
+        return;
+
+    t_hop   *hop   = &hops[ttl_idx];
+    t_probe *probe = &hop->probes[probe_idx];
+    if (probe->done)
+        return;
+
+    probe->done      = 1;
+    probe->got_reply = 1;
+    probe->rtt       = time_diff_ms(&probe->send_time, &recv_time);
+    probe->is_dest   = is_dest;
+
+    if (hop->hop_ip[0] == '\0')
+        snprintf(hop->hop_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
+    if (is_dest)
+        hop->reached = 1;
+}
+
+static void print_hop_line(int ttl, t_hop *hop, int nqueries) {
+    printf("%2d  ", ttl);
+    if (hop->hop_ip[0])
+        printf("%s", hop->hop_ip);
+    for (int i = 0; i < nqueries; i++) {
+        if (hop->probes[i].got_reply)
+            printf("  %.3f ms", hop->probes[i].rtt);
+        else
+            printf("  %s", (hop->hop_ip[0] || i > 0) ? "*" : "* ");
+    }
+    printf("\n");
+    fflush(stdout);
 }
 
 static int resolve_target(const char *target, struct sockaddr_in *dest) {
@@ -136,7 +235,6 @@ static int resolve_target(const char *target, struct sockaddr_in *dest) {
     hints.ai_family   = AF_INET;
     hints.ai_socktype = SOCK_RAW;
     hints.ai_protocol = IPPROTO_ICMP;
-
     int ret = getaddrinfo(target, NULL, &hints, &res);
     if (ret != 0) {
         fprintf(stderr, "ft_traceroute: %s: %s\n", target, gai_strerror(ret));
@@ -156,57 +254,6 @@ static int create_icmp_socket(void) {
     return sockfd;
 }
 
-static void print_hop_line(int ttl, const char *hop_ip,
-                           const double *rtts, const int *received,
-                           int nqueries) {
-    printf("%2d  ", ttl);
-    if (hop_ip[0])
-        printf("%s", hop_ip);
-    for (int i = 0; i < nqueries; i++) {
-        if (received[i])
-            printf("  %.3f ms", rtts[i]);
-        else
-            printf("  %s", (hop_ip[0] || i > 0) ? "*" : "* ");
-    }
-    printf("\n");
-    fflush(stdout);
-}
-
-static int run_hop(int sockfd, struct sockaddr_in *dest, int ttl,
-                   uint16_t id, struct s_options *opts,
-                   char *hop_ip, double *rtts, int *received) {
-    int reached = 0;
-
-    hop_ip[0] = '\0';
-    for (int probe = 0; probe < opts->nqueries; probe++) {
-        int seq = (ttl - 1) * opts->nqueries + probe;
-
-        struct timeval send_time;
-        gettimeofday(&send_time, NULL);
-        send_probe(sockfd, dest, ttl, seq, id);
-
-        struct sockaddr_in from;
-        double rtt     = 0;
-        int    is_dest = 0;
-        int    got = wait_for_response(sockfd, id, seq,
-                                       &from, &send_time,
-                                       &rtt, &is_dest,
-                                       opts->timeout_sec);
-        if (got == 1) {
-            if (hop_ip[0] == '\0')
-                snprintf(hop_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
-            rtts[probe]     = rtt;
-            received[probe] = 1;
-            if (is_dest)
-                reached = 1;
-        } else {
-            rtts[probe]     = 0;
-            received[probe] = 0;
-        }
-    }
-    return reached;
-}
-
 static void print_header(const char *target, const char *dest_ip,
                          const struct s_options *opts) {
     printf("traceroute to %s (%s), %d hops max, %d byte packets\n",
@@ -214,19 +261,94 @@ static void print_header(const char *target, const char *dest_ip,
            (int)(sizeof(struct icmphdr) + PROBE_DATA_SIZE));
 }
 
+/*
+ * Pipelined probe loop: up to WINDOW_SIZE hops are in flight at once.
+ * A silent hop does not block subsequent ones; we only wait for timeout
+ * once across all in-flight hops, not once per hop.
+ */
 static void run_traceroute(int sockfd, struct sockaddr_in *dest,
-                           uint16_t id, struct s_options *opts) {
-    for (int ttl = 1; ttl <= opts->max_ttl; ttl++) {
-        char   hop_ip[INET_ADDRSTRLEN];
-        double rtts[opts->nqueries];
-        int    received[opts->nqueries];
+                            uint16_t id, struct s_options *opts) {
+    long timeout_ms = opts->timeout_sec * 1000L;
 
-        int reached = run_hop(sockfd, dest, ttl, id, opts,
-                              hop_ip, rtts, received);
-        print_hop_line(ttl, hop_ip, rtts, received, opts->nqueries);
-        if (reached)
-            break;
+    t_hop *hops = calloc((size_t)(opts->max_ttl + 1), sizeof(t_hop));
+    if (!hops) {
+        perror("calloc");
+        return;
     }
+
+    int next_to_send  = 1;
+    int next_to_print = 1;
+    int dest_ttl      = opts->max_ttl;
+    int in_flight     = 0;
+
+    while (next_to_print <= opts->max_ttl) {
+        /* Fill the send window. */
+        while (in_flight < WINDOW_SIZE && next_to_send <= dest_ttl) {
+            send_hop_probes(sockfd, dest, next_to_send, id,
+                            opts->nqueries, timeout_ms, &hops[next_to_send]);
+            in_flight++;
+            next_to_send++;
+        }
+
+        if (in_flight == 0)
+            break;
+
+        /* Wait until the next probe deadline. */
+        struct timeval now;
+        gettimeofday(&now, NULL);
+
+        struct timeval wait;
+        if (next_deadline(hops, next_to_print, next_to_send - 1,
+                          opts->nqueries, &now, &wait)) {
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(sockfd, &fds);
+            int ret = select(sockfd + 1, &fds, NULL, NULL, &wait);
+            if (ret > 0)
+                receive_response(sockfd, hops, id, opts->nqueries,
+                                 next_to_print, next_to_send - 1);
+            else if (ret < 0 && errno != EINTR)
+                break;
+        }
+
+        gettimeofday(&now, NULL);
+        expire_probes(hops, next_to_print, next_to_send - 1,
+                      opts->nqueries, &now);
+
+        /* Mark hops whose all probes are done. */
+        for (int ttl = next_to_print; ttl < next_to_send; ttl++) {
+            if (hops[ttl].done)
+                continue;
+            if (!hop_is_complete(&hops[ttl], opts->nqueries))
+                continue;
+            hops[ttl].done = 1;
+            in_flight--;
+            if (hops[ttl].reached && ttl < dest_ttl) {
+                dest_ttl = ttl;
+                /* Cancel all probes already sent beyond the destination. */
+                for (int t = dest_ttl + 1; t < next_to_send; t++) {
+                    if (!hops[t].done) {
+                        hops[t].done = 1;
+                        in_flight--;
+                        for (int p = 0; p < opts->nqueries; p++)
+                            hops[t].probes[p].done = 1;
+                    }
+                }
+            }
+        }
+
+        /* Print completed hops in TTL order. */
+        while (next_to_print < next_to_send && hops[next_to_print].done) {
+            print_hop_line(next_to_print, &hops[next_to_print], opts->nqueries);
+            if (hops[next_to_print].reached) {
+                free(hops);
+                return;
+            }
+            next_to_print++;
+        }
+    }
+
+    free(hops);
 }
 
 int traceroute(char *target, struct s_options *opts) {

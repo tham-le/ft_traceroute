@@ -19,6 +19,8 @@
 #define DEFAULT_TIMEOUT_SEC   5
 #define PROBE_DATA_SIZE      40
 #define MAX_PACKET_SIZE    4096
+#define MAX_NQUERIES         10
+#define WINDOW_SIZE          16
 
 struct s_options {
     int max_ttl;
