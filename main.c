@@ -9,6 +9,7 @@ int main(int argc, char *argv[]) {
     opts.window_size = DEFAULT_WINDOW_SIZE;
     opts.do_dns      = 1;
     opts.first_ttl   = DEFAULT_FIRST_TTL;
+    opts.tos         = DEFAULT_TOS;
 
     char *target = parse_arguments(argc, argv, &opts);
     return traceroute(target, &opts);

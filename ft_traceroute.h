@@ -22,6 +22,7 @@
 #define MAX_PACKET_SIZE    4096
 #define MAX_NQUERIES         10
 #define DEFAULT_WINDOW_SIZE  16
+#define DEFAULT_TOS           0
 #define NEAR_MS             400
 
 struct s_options {
@@ -31,6 +32,7 @@ struct s_options {
     int window_size;
     int do_dns;
     int first_ttl;
+    int tos;
 };
 
 int   traceroute(char *target, struct s_options *opts);
