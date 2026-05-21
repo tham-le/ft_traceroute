@@ -144,6 +144,34 @@ static int next_deadline(t_hop *hops, int from_ttl, int to_ttl,
     return 1;
 }
 
+/*
+ * After a reply arrives at ttl, shorten the deadline of all pending probes
+ * at adjacent hops (ttl-1 and ttl+1) to now + NEAR_MS.  This prevents a
+ * silent hop from blocking the display for the full timeout when the hops
+ * around it have already responded.
+ */
+static void apply_near(t_hop *hops, int ttl, int nqueries,
+                        int from_ttl, int to_ttl) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    struct timeval near_dl = now;
+    timeval_add_ms(&near_dl, NEAR_MS);
+
+    for (int adj = ttl - 1; adj <= ttl + 1; adj += 2) {
+        if (adj < from_ttl || adj > to_ttl || hops[adj].done)
+            continue;
+        for (int p = 0; p < nqueries; p++) {
+            t_probe *pr = &hops[adj].probes[p];
+            if (pr->done)
+                continue;
+            long near_us = near_dl.tv_sec  * 1000000L + near_dl.tv_usec;
+            long curr_us = pr->deadline.tv_sec * 1000000L + pr->deadline.tv_usec;
+            if (near_us < curr_us)
+                pr->deadline = near_dl;
+        }
+    }
+}
+
 static void receive_response(int sockfd, t_hop *hops, uint16_t id,
                               int nqueries, int from_ttl, int to_ttl) {
     char               buf[MAX_PACKET_SIZE];
@@ -213,6 +241,8 @@ static void receive_response(int sockfd, t_hop *hops, uint16_t id,
         snprintf(hop->hop_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
     if (is_dest)
         hop->reached = 1;
+
+    apply_near(hops, ttl_idx, nqueries, from_ttl, to_ttl);
 }
 
 static void print_hop_line(int ttl, t_hop *hop, int nqueries) {
@@ -323,6 +353,7 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
                 continue;
             hops[ttl].done = 1;
             in_flight--;
+            apply_near(hops, ttl, opts->nqueries, next_to_print, next_to_send - 1);
             if (hops[ttl].reached && ttl < dest_ttl) {
                 dest_ttl = ttl;
                 /* Cancel all probes already sent beyond the destination. */
@@ -366,7 +397,15 @@ int traceroute(char *target, struct s_options *opts) {
     uint16_t id = (uint16_t)(getpid() & 0xFFFF);
 
     print_header(target, dest_ip, opts);
+
+    struct timeval t0, t1;
+    gettimeofday(&t0, NULL);
     run_traceroute(sockfd, &dest, id, opts);
+    gettimeofday(&t1, NULL);
+
+    double elapsed = (t1.tv_sec  - t0.tv_sec)  * 1000.0
+                   + (t1.tv_usec - t0.tv_usec) / 1000.0;
+    fprintf(stderr, "total time: %.0f ms\n", elapsed);
 
     close(sockfd);
     return 0;
