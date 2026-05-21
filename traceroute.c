@@ -305,6 +305,15 @@ static int create_icmp_socket(const struct s_options *opts) {
             return -1;
         }
     }
+    if (opts->iface) {
+        if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE,
+                       opts->iface, strlen(opts->iface) + 1) < 0) {
+            fprintf(stderr, "ft_traceroute: SO_BINDTODEVICE %s: %s\n",
+                    opts->iface, strerror(errno));
+            close(sockfd);
+            return -1;
+        }
+    }
     if (opts->source) {
         struct sockaddr_in src;
         memset(&src, 0, sizeof(src));
