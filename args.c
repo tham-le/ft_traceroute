@@ -8,6 +8,7 @@ static void help(void) {
            "  -q <nqueries> Probes per hop (default: 3, max: %d)\n"
            "  -w <timeout>  Seconds to wait per probe (default: 5)\n"
            "  -N <squeries> Simultaneous probes in flight (default: 16)\n"
+           "  -n            Do not resolve IP addresses to hostnames\n"
            "  -?, --help    Give this help list\n",
            MAX_NQUERIES);
     exit(0);
@@ -50,6 +51,8 @@ char *parse_arguments(int argc, char *argv[], struct s_options *opts) {
         } else if (strcmp(argv[i], "-N") == 0) {
             opts->window_size = parse_int(need_arg(argc, argv, &i, "-N"),
                                           1, 128, "-N");
+        } else if (strcmp(argv[i], "-n") == 0) {
+            opts->do_dns = 0;
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "ft_traceroute: invalid option '%s'\n", argv[i]);
             fprintf(stderr, "Try 'ft_traceroute --help' for more information.\n");
