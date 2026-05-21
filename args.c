@@ -4,6 +4,7 @@ static void help(void) {
     printf("Usage: ft_traceroute [OPTION...] HOST\n"
            "Print the route packets trace to network host.\n\n"
            " Options:\n"
+           "  -f <first_ttl> Start from this hop (default: 1)\n"
            "  -m <max_ttl>  Set the max number of hops (default: 30)\n"
            "  -q <nqueries> Probes per hop (default: 3, max: %d)\n"
            "  -w <timeout>  Seconds to wait per probe (default: 5)\n"
@@ -40,6 +41,8 @@ char *parse_arguments(int argc, char *argv[], struct s_options *opts) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-?") == 0) {
             help();
+        } else if (strcmp(argv[i], "-f") == 0) {
+            opts->first_ttl = parse_int(need_arg(argc, argv, &i, "-f"), 1, 255, "-f");
         } else if (strcmp(argv[i], "-m") == 0) {
             opts->max_ttl = parse_int(need_arg(argc, argv, &i, "-m"), 1, 255, "-m");
         } else if (strcmp(argv[i], "-q") == 0) {

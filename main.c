@@ -8,6 +8,7 @@ int main(int argc, char *argv[]) {
     opts.timeout_sec = DEFAULT_TIMEOUT_SEC;
     opts.window_size = DEFAULT_WINDOW_SIZE;
     opts.do_dns      = 1;
+    opts.first_ttl   = DEFAULT_FIRST_TTL;
 
     char *target = parse_arguments(argc, argv, &opts);
     return traceroute(target, &opts);
