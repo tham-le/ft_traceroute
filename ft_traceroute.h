@@ -21,6 +21,7 @@
 #define MAX_PACKET_SIZE    4096
 #define MAX_NQUERIES         10
 #define WINDOW_SIZE          16
+#define NEAR_MS             400  /* shorten adjacent-hop deadline after a reply */
 
 struct s_options {
     int max_ttl;
