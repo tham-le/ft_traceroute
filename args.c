@@ -11,6 +11,7 @@ static void help(void) {
            "  -N <squeries> Simultaneous probes in flight (default: 16)\n"
            "  -n            Do not resolve IP addresses to hostnames\n"
            "  -t <tos>      Set IP TOS byte (default: 0)\n"
+           "  -s <src_addr> Use this source address\n"
            "  -?, --help    Give this help list\n",
            MAX_NQUERIES);
     exit(0);
@@ -59,6 +60,8 @@ char *parse_arguments(int argc, char *argv[], struct s_options *opts) {
             opts->do_dns = 0;
         } else if (strcmp(argv[i], "-t") == 0) {
             opts->tos = parse_int(need_arg(argc, argv, &i, "-t"), 0, 255, "-t");
+        } else if (strcmp(argv[i], "-s") == 0) {
+            opts->source = (char *)need_arg(argc, argv, &i, "-s");
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "ft_traceroute: invalid option '%s'\n", argv[i]);
             fprintf(stderr, "Try 'ft_traceroute --help' for more information.\n");
