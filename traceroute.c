@@ -305,6 +305,22 @@ static int create_icmp_socket(const struct s_options *opts) {
             return -1;
         }
     }
+    if (opts->source) {
+        struct sockaddr_in src;
+        memset(&src, 0, sizeof(src));
+        src.sin_family = AF_INET;
+        if (inet_pton(AF_INET, opts->source, &src.sin_addr) != 1) {
+            fprintf(stderr, "ft_traceroute: invalid source address: %s\n",
+                    opts->source);
+            close(sockfd);
+            return -1;
+        }
+        if (bind(sockfd, (struct sockaddr *)&src, sizeof(src)) < 0) {
+            fprintf(stderr, "ft_traceroute: bind: %s\n", strerror(errno));
+            close(sockfd);
+            return -1;
+        }
+    }
     return sockfd;
 }
 

@@ -32,7 +32,8 @@ struct s_options {
     int window_size;
     int do_dns;
     int first_ttl;
-    int tos;
+    int   tos;
+    char *source;
 };
 
 int   traceroute(char *target, struct s_options *opts);
