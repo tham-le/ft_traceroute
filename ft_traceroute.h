@@ -28,6 +28,7 @@ struct s_options {
     int nqueries;
     int timeout_sec;
     int window_size;
+    int do_dns;
 };
 
 int   traceroute(char *target, struct s_options *opts);

@@ -10,10 +10,11 @@ typedef struct {
 } t_probe;
 
 typedef struct {
-    t_probe probes[MAX_NQUERIES];
-    char    hop_ip[INET_ADDRSTRLEN];
-    int     done;
-    int     reached;
+    t_probe            probes[MAX_NQUERIES];
+    struct sockaddr_in from_addr;
+    char               hop_ip[INET_ADDRSTRLEN];
+    int                done;
+    int                reached;
 } t_hop;
 
 static unsigned short checksum(void *data, int len) {
@@ -237,18 +238,33 @@ static void receive_response(int sockfd, t_hop *hops, uint16_t id,
     probe->rtt       = time_diff_ms(&probe->send_time, &recv_time);
     probe->is_dest   = is_dest;
 
-    if (hop->hop_ip[0] == '\0')
+    if (hop->hop_ip[0] == '\0') {
+        hop->from_addr = from;
         snprintf(hop->hop_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
+    }
     if (is_dest)
         hop->reached = 1;
 
     apply_near(hops, ttl_idx, nqueries, from_ttl, to_ttl);
 }
 
-static void print_hop_line(int ttl, t_hop *hop, int nqueries) {
+static void print_hop_line(int ttl, t_hop *hop, int nqueries,
+                            const struct s_options *opts) {
     printf("%2d  ", ttl);
-    if (hop->hop_ip[0])
-        printf("%s", hop->hop_ip);
+    if (hop->hop_ip[0]) {
+        if (opts->do_dns) {
+            char host[NI_MAXHOST];
+            if (getnameinfo((struct sockaddr *)&hop->from_addr,
+                            sizeof(hop->from_addr),
+                            host, sizeof(host), NULL, 0, 0) == 0
+                    && strcmp(host, hop->hop_ip) != 0)
+                printf("%s (%s)", host, hop->hop_ip);
+            else
+                printf("%s", hop->hop_ip);
+        } else {
+            printf("%s", hop->hop_ip);
+        }
+    }
     for (int i = 0; i < nqueries; i++) {
         if (hop->probes[i].got_reply)
             printf("  %.3f ms", hop->probes[i].rtt);
@@ -371,7 +387,7 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
 
         /* Print completed hops in TTL order. */
         while (next_to_print < next_to_send && hops[next_to_print].done) {
-            print_hop_line(next_to_print, &hops[next_to_print], opts->nqueries);
+            print_hop_line(next_to_print, &hops[next_to_print], opts->nqueries, opts);
             if (hops[next_to_print].reached) {
                 free(hops);
                 return;
