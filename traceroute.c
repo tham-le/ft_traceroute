@@ -33,20 +33,20 @@ static unsigned short checksum(void *data, int len) {
 }
 
 static void send_probe(int sockfd, struct sockaddr_in *dest,
-                       int ttl, int seq, uint16_t id) {
+                       int ttl, int seq, uint16_t id, int packet_len) {
     if (setsockopt(sockfd, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl)) < 0) {
         fprintf(stderr, "setsockopt IP_TTL: %s\n", strerror(errno));
         return;
     }
-    char packet[sizeof(struct icmphdr) + PROBE_DATA_SIZE];
-    memset(packet, 0, sizeof(packet));
+    char packet[packet_len];
+    memset(packet, 0, packet_len);
     struct icmphdr *icmp   = (struct icmphdr *)packet;
     icmp->type             = ICMP_ECHO;
     icmp->code             = 0;
     icmp->un.echo.id       = htons(id);
     icmp->un.echo.sequence = htons((uint16_t)seq);
-    icmp->checksum         = checksum(packet, sizeof(packet));
-    if (sendto(sockfd, packet, sizeof(packet), 0,
+    icmp->checksum         = checksum(packet, packet_len);
+    if (sendto(sockfd, packet, packet_len, 0,
                (struct sockaddr *)dest, sizeof(*dest)) < 0)
         fprintf(stderr, "ft_traceroute: sendto: %s\n", strerror(errno));
 }
@@ -64,7 +64,8 @@ static void timeval_add_ms(struct timeval *tv, long ms) {
 
 static void send_hop_probes(int sockfd, struct sockaddr_in *dest,
                              int ttl, uint16_t id, int nqueries,
-                             long timeout_ms, t_hop *hop, int port_base) {
+                             long timeout_ms, t_hop *hop,
+                             int port_base, int packet_len) {
     struct timeval now;
     gettimeofday(&now, NULL);
     int seq_base = port_base + (ttl - 1) * nqueries;
@@ -77,7 +78,7 @@ static void send_hop_probes(int sockfd, struct sockaddr_in *dest,
         pr->got_reply = 0;
         pr->rtt       = 0;
         pr->is_dest   = 0;
-        send_probe(sockfd, dest, ttl, seq_base + p, id);
+        send_probe(sockfd, dest, ttl, seq_base + p, id, packet_len);
     }
     hop->hop_ip[0] = '\0';
     hop->done      = 0;
@@ -338,8 +339,7 @@ static int create_icmp_socket(const struct s_options *opts) {
 static void print_header(const char *target, const char *dest_ip,
                          const struct s_options *opts) {
     printf("traceroute to %s (%s), %d hops max, %d byte packets\n",
-           target, dest_ip, opts->max_ttl,
-           (int)(sizeof(struct icmphdr) + PROBE_DATA_SIZE));
+           target, dest_ip, opts->max_ttl, opts->packet_len);
 }
 
 /*
@@ -368,7 +368,7 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
         while (in_flight < opts->window_size && next_to_send <= dest_ttl) {
             send_hop_probes(sockfd, dest, next_to_send, id,
                             opts->nqueries, timeout_ms, &hops[next_to_send],
-                            opts->port);
+                            opts->port, opts->packet_len);
             in_flight++;
             next_to_send++;
         }
