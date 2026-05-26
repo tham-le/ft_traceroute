@@ -269,7 +269,7 @@ static void print_hop_line(int ttl, t_hop *hop, int nqueries,
         if (hop->probes[i].got_reply)
             printf("  %.3f ms", hop->probes[i].rtt);
         else
-            printf("  %s", (hop->hop_ip[0] || i > 0) ? "*" : "* ");
+            printf("  *");
     }
     printf("\n");
     fflush(stdout);
@@ -447,16 +447,7 @@ int traceroute(char *target, struct s_options *opts) {
     uint16_t id = (uint16_t)(getpid() & 0xFFFF);
 
     print_header(target, dest_ip, opts);
-    //    struct timeval t0, t1;
-    // gettimeofday(&t0, NULL);
     run_traceroute(sockfd, &dest, id, opts);
-    // gettimeofday(&t1, NULL);
-
-    // double elapsed = (t1.tv_sec  - t0.tv_sec)  * 1000.0
-    //                + (t1.tv_usec - t0.tv_usec) / 1000.0;
-    // fprintf(stderr, "total time: %.0f ms\n", elapsed);
-
-
     close(sockfd);
     return 0;
 }
