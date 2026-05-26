@@ -10,6 +10,8 @@ int main(int argc, char *argv[]) {
     opts.do_dns      = 1;
     opts.first_ttl   = DEFAULT_FIRST_TTL;
     opts.tos         = DEFAULT_TOS;
+    opts.port        = DEFAULT_PORT;
+    opts.packet_len  = DEFAULT_PACKET_LEN;
 
     char *target = parse_arguments(argc, argv, &opts);
     return traceroute(target, &opts);

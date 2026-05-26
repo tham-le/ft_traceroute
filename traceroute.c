@@ -64,10 +64,10 @@ static void timeval_add_ms(struct timeval *tv, long ms) {
 
 static void send_hop_probes(int sockfd, struct sockaddr_in *dest,
                              int ttl, uint16_t id, int nqueries,
-                             long timeout_ms, t_hop *hop) {
+                             long timeout_ms, t_hop *hop, int port_base) {
     struct timeval now;
     gettimeofday(&now, NULL);
-    int seq_base = (ttl - 1) * nqueries;
+    int seq_base = port_base + (ttl - 1) * nqueries;
     for (int p = 0; p < nqueries; p++) {
         t_probe *pr  = &hop->probes[p];
         pr->send_time = now;
@@ -174,7 +174,8 @@ static void apply_near(t_hop *hops, int ttl, int nqueries,
 }
 
 static void receive_response(int sockfd, t_hop *hops, uint16_t id,
-                              int nqueries, int from_ttl, int to_ttl) {
+                              int nqueries, int from_ttl, int to_ttl,
+                              int port_base) {
     char               buf[MAX_PACKET_SIZE];
     struct sockaddr_in from;
     socklen_t          addr_len = sizeof(from);
@@ -220,8 +221,9 @@ static void receive_response(int sockfd, t_hop *hops, uint16_t id,
         return;
     }
 
-    int ttl_idx   = seq / nqueries + 1;
-    int probe_idx = seq % nqueries;
+    int adjusted  = (int)((uint16_t)(seq - port_base));
+    int ttl_idx   = adjusted / nqueries + 1;
+    int probe_idx = adjusted % nqueries;
 
     if (ttl_idx < from_ttl || ttl_idx > to_ttl)
         return;
@@ -365,7 +367,8 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
         /* Fill the send window. */
         while (in_flight < opts->window_size && next_to_send <= dest_ttl) {
             send_hop_probes(sockfd, dest, next_to_send, id,
-                            opts->nqueries, timeout_ms, &hops[next_to_send]);
+                            opts->nqueries, timeout_ms, &hops[next_to_send],
+                            opts->port);
             in_flight++;
             next_to_send++;
         }
@@ -386,7 +389,8 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
             int ret = select(sockfd + 1, &fds, NULL, NULL, &wait);
             if (ret > 0)
                 receive_response(sockfd, hops, id, opts->nqueries,
-                                 next_to_print, next_to_send - 1);
+                                 next_to_print, next_to_send - 1,
+                                 opts->port);
             else if (ret < 0 && errno != EINTR)
                 break;
         }

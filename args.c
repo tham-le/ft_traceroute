@@ -11,6 +11,8 @@ static void help(void) {
            "  -N <squeries> Simultaneous probes in flight (default: 16)\n"
            "  -n            Do not resolve IP addresses to hostnames\n"
            "  -t <tos>      Set IP TOS byte (default: 0)\n"
+           "  -p <port>     Base ICMP sequence number (default: 0)\n"
+           "  -l <len>      Total probe packet length in bytes (default: 48)\n"
            "  -s <src_addr> Use this source address\n"
            "  -i <iface>    Bind to this network interface\n"
            "  -?, --help    Give this help list\n",
@@ -65,6 +67,11 @@ char *parse_arguments(int argc, char *argv[], struct s_options *opts) {
             opts->source = (char *)need_arg(argc, argv, &i, "-s");
         } else if (strcmp(argv[i], "-i") == 0) {
             opts->iface = (char *)need_arg(argc, argv, &i, "-i");
+        } else if (strcmp(argv[i], "-p") == 0) {
+            opts->port = parse_int(need_arg(argc, argv, &i, "-p"), 0, 65535, "-p");
+        } else if (strcmp(argv[i], "-l") == 0) {
+            opts->packet_len = parse_int(need_arg(argc, argv, &i, "-l"),
+                                         8, MAX_PACKET_SIZE, "-l");
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "ft_traceroute: invalid option '%s'\n", argv[i]);
             fprintf(stderr, "Try 'ft_traceroute --help' for more information.\n");

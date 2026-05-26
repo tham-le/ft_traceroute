@@ -23,6 +23,8 @@
 #define MAX_NQUERIES         10
 #define DEFAULT_WINDOW_SIZE  16
 #define DEFAULT_TOS           0
+#define DEFAULT_PORT          0
+#define DEFAULT_PACKET_LEN   48
 #define NEAR_MS             400
 
 struct s_options {
@@ -32,7 +34,9 @@ struct s_options {
     int window_size;
     int do_dns;
     int first_ttl;
-    int   tos;
+    int tos;
+    int port;
+    int packet_len;
     char *source;
     char *iface;
 };
