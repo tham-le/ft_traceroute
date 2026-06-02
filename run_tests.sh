@@ -211,6 +211,7 @@ expect_err "-p 65536 (above max 65535)"        -p 65536 localhost
 expect_err "-l 7 (below min 8)"                -l 7    localhost
 expect_err "-l 4097 (above max 4096)"          -l 4097 localhost
 expect_err "-s invalid IP"                     -s 999.999.999.999 localhost
+expect_err "unresolvable host"                 -n nonexistent.invalid
 echo ""
 
 # -----------------------------------------------------------------------
