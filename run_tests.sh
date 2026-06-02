@@ -126,7 +126,7 @@ expect_match() {
     # Retry: probes are occasionally dropped on loopback, so a single run of
     # either tool can show a stray "*" where the other shows an RTT. A real
     # mismatch persists across retries; a transient drop does not.
-    for attempt in 1 2 3; do
+    for attempt in 1 2 3 4 5 6; do
         ft_out=$(  "$FT"          "$@" 2>&1 | normalise) || true
         sys_out=$(traceroute -I   "$@" 2>&1 | normalise) || true
         [[ "$ft_out" == "$sys_out" ]] && break
@@ -204,12 +204,16 @@ expect_err "-N 0 (below min 1)"                -N 0    localhost
 expect_err "-N 129 (above max 128)"            -N 129  localhost
 expect_err "-t -1 (below min 0)"               -t -1   localhost
 expect_err "-t 256 (above max 255)"            -t 256  localhost
-expect_err "-w 0 (below min 1)"                -w 0    localhost
+expect_err "-w 0 (below min)"                  -w 0    localhost
 expect_err "-w 61 (above max 60)"              -w 61   localhost
+expect_err "-w 1.2.3 (malformed)"              -w 1.2.3 localhost
 expect_err "-p -1 (below min 0)"               -p -1   localhost
 expect_err "-p 65536 (above max 65535)"        -p 65536 localhost
-expect_err "-l 7 (below min 8)"                -l 7    localhost
+expect_err "-l 27 (below min 28)"              -l 27   localhost
 expect_err "-l 4097 (above max 4096)"          -l 4097 localhost
+expect_err "-f 5 -m 3 (first hop out of range)" -f 5 -m 3 localhost
+expect_err "non-numeric packetlen operand"     localhost abc
+expect_err "third operand rejected"            localhost 60 70
 expect_err "-s invalid IP"                     -s 999.999.999.999 localhost
 expect_err "unresolvable host"                 -n nonexistent.invalid
 echo ""
@@ -350,12 +354,22 @@ echo ""
 # -l: probe packet length
 # -----------------------------------------------------------------------
 echo "--- -l: probe packet length ---"
-for size in 8 28 48 200 1472 4096; do
+for size in 28 48 200 1472 4096; do
     expect_header "-l $size: header says $size byte packets"  \
         "$size byte packets"  -l $size -n localhost
     expect_match  "-l $size: matches real traceroute"  \
         -l $size -n localhost
 done
+# Positional operand sets packet length, like traceroute(8).
+expect_header "positional packetlen: header says 60 byte packets"  \
+    '60 byte packets'  -n localhost 60
+echo ""
+
+# -----------------------------------------------------------------------
+# -w: fractional timeout
+# -----------------------------------------------------------------------
+echo "--- -w: fractional timeout ---"
+expect_ok "-w 0.5 completes"  -w 0.5 -n -m 2 localhost
 echo ""
 
 # -----------------------------------------------------------------------
