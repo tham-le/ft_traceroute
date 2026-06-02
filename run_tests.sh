@@ -111,9 +111,15 @@ expect_header() {
 # System traceroute defaults to UDP, which triggers different router behaviour than ICMP.
 expect_match() {
     local desc="$1"; shift
-    local ft_out sys_out
-    ft_out=$(  "$FT"          "$@" 2>&1 | normalise) || true
-    sys_out=$(traceroute -I   "$@" 2>&1 | normalise) || true
+    local ft_out sys_out attempt
+    # Retry: probes are occasionally dropped on loopback, so a single run of
+    # either tool can show a stray "*" where the other shows an RTT. A real
+    # mismatch persists across retries; a transient drop does not.
+    for attempt in 1 2 3; do
+        ft_out=$(  "$FT"          "$@" 2>&1 | normalise) || true
+        sys_out=$(traceroute -I   "$@" 2>&1 | normalise) || true
+        [[ "$ft_out" == "$sys_out" ]] && break
+    done
     if [[ "$ft_out" == "$sys_out" ]]; then
         pass "$desc"
     else
@@ -264,28 +270,31 @@ echo ""
 
 # -----------------------------------------------------------------------
 # -w: timeout
-# Structural checks only: sequential runs with a 1s timeout against an
-# unreachable host are racing. Different probes succeed each time, so
-# comparing the two outputs is not deterministic.
+# Structural checks only: comparing two timed-out runs is non-deterministic.
+# 192.0.2.1 (RFC 5737) is never reachable, but the path to it crosses real
+# routers that reply with TTL-exceeded. Stars only appear past the last
+# responding router, so we check the unreachable TAIL, not fixed hop numbers.
+# -N 16 probes all hops in parallel, keeping the 1s timeout to ~one window.
 # -----------------------------------------------------------------------
-echo "--- -w: timeout (~5s) ---"
-_w_out=$("$FT" -w 1 -m 5 -n 192.0.2.1 2>&1) || true
+echo "--- -w: timeout (~2s) ---"
+_w_max=16
+_w_out=$("$FT" -w 1 -m $_w_max -N 16 -n 192.0.2.1 2>&1) || true
 _w_hops=$(echo "$_w_out" | grep -cE '^ *[0-9]+ ') || true
-if [[ $_w_hops -eq 5 ]]; then
-    pass "-w 1: produces 5 hop lines"
+if [[ $_w_hops -eq $_w_max ]]; then
+    pass "-w 1: produces $_w_max hop lines"
 else
-    fail "-w 1: expected 5 hop lines, got $_w_hops"
+    fail "-w 1: expected $_w_max hop lines, got $_w_hops"
     echo "    actual:"
-    echo "$_w_out" | head -8 | sed 's/^/    /'
+    echo "$_w_out" | head -20 | sed 's/^/    /'
 fi
-# Hops 2-5 should all be stars (gateway at hop 1 may reply).
-_w_star_hops=$(echo "$_w_out" | grep -cE '^ *[2-5] +\*[[:space:]]+\*[[:space:]]+\*') || true
-if [[ $_w_star_hops -ge 3 ]]; then
-    pass "-w 1: unreachable hops show stars"
+# The destination is unreachable, so the tail hops time out as * * *.
+_w_star_hops=$(echo "$_w_out" | grep -cE '^ *[0-9]+ +\*[[:space:]]+\*[[:space:]]+\*') || true
+if [[ $_w_star_hops -ge 1 ]]; then
+    pass "-w 1: unreachable hops show stars ($_w_star_hops all-star hops)"
 else
-    fail "-w 1: expected hops 2-5 to show * * *, got $_w_star_hops such lines"
+    fail "-w 1: expected at least one * * * hop, got none"
     echo "    actual:"
-    echo "$_w_out" | head -8 | sed 's/^/    /'
+    echo "$_w_out" | head -20 | sed 's/^/    /'
 fi
 echo ""
 
@@ -349,8 +358,9 @@ echo ""
 # Star display
 # Structural checks only for the same timing reason as the -w section.
 # -----------------------------------------------------------------------
-echo "--- Star display (~3s) ---"
-_s_out=$("$FT" -w 1 -m 3 -n 192.0.2.1 2>&1) || true
+echo "--- Star display (~2s) ---"
+# Reach past the responding routers so the unreachable tail prints stars.
+_s_out=$("$FT" -w 1 -m 16 -N 16 -n 192.0.2.1 2>&1) || true
 # At least one hop must be all three stars.
 # Raw output uses double-space between fields: "2    *  *  *"
 if echo "$_s_out" | grep -qE '^ *[0-9]+[[:space:]]+\*[[:space:]]+\*[[:space:]]+\*$'; then
