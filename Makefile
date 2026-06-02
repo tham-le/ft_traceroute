@@ -11,6 +11,8 @@ OBJ		= $(SRC:.c=.o)
 
 all: $(NAME)
 
+$(OBJ): ft_traceroute.h $(LIBFT_DIR)/libft.h
+
 $(NAME):	$(OBJ) $(LIBFT)
 	$(CC) $(CFLAGS) $(OBJ) $(LIBFT) -o $(NAME)
 

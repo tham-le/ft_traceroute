@@ -38,22 +38,26 @@ static void send_probe(int sockfd, struct sockaddr_in *dest,
         fprintf(stderr, "setsockopt IP_TTL: %s\n", strerror(errno));
         return;
     }
-    char packet[packet_len];
-    ft_memset(packet, 0, packet_len);
+    /* packet_len is the total IP packet size (as traceroute reports it).
+     * The kernel prepends the IP header, so we emit packet_len - IP_HEADER_LEN
+     * bytes of ICMP. The -l/packetlen range guarantees this is >= 8. */
+    int icmp_len = packet_len - IP_HEADER_LEN;
+    char packet[icmp_len];
+    ft_memset(packet, 0, (size_t)icmp_len);
     struct icmphdr *icmp   = (struct icmphdr *)packet;
     icmp->type             = ICMP_ECHO;
     icmp->code             = 0;
     icmp->un.echo.id       = htons(id);
     icmp->un.echo.sequence = htons((uint16_t)seq);
-    icmp->checksum         = checksum(packet, packet_len);
-    if (sendto(sockfd, packet, packet_len, 0,
+    icmp->checksum         = checksum(packet, icmp_len);
+    if (sendto(sockfd, packet, (size_t)icmp_len, 0,
                (struct sockaddr *)dest, sizeof(*dest)) < 0)
         fprintf(stderr, "ft_traceroute: sendto: %s\n", strerror(errno));
 }
 
 static double time_diff_ms(struct timeval *start, struct timeval *end) {
-    return (end->tv_sec  - start->tv_sec)  * 1000.0
-         + (end->tv_usec - start->tv_usec) / 1000.0;
+    return (double)(end->tv_sec  - start->tv_sec)  * 1000.0
+         + (double)(end->tv_usec - start->tv_usec) / 1000.0;
 }
 
 static void timeval_add_ms(struct timeval *tv, long ms) {
@@ -146,34 +150,6 @@ static int next_deadline(t_hop *hops, int from_ttl, int to_ttl,
     return 1;
 }
 
-/*
- * After a reply arrives at ttl, shorten the deadline of all pending probes
- * at adjacent hops (ttl-1 and ttl+1) to now + NEAR_MS.  This prevents a
- * silent hop from blocking the display for the full timeout when the hops
- * around it have already responded.
- */
-static void apply_near(t_hop *hops, int ttl, int nqueries,
-                        int from_ttl, int to_ttl) {
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    struct timeval near_dl = now;
-    timeval_add_ms(&near_dl, NEAR_MS);
-
-    for (int adj = ttl - 1; adj <= ttl + 1; adj += 2) {
-        if (adj < from_ttl || adj > to_ttl || hops[adj].done)
-            continue;
-        for (int p = 0; p < nqueries; p++) {
-            t_probe *pr = &hops[adj].probes[p];
-            if (pr->done)
-                continue;
-            long near_us = near_dl.tv_sec  * 1000000L + near_dl.tv_usec;
-            long curr_us = pr->deadline.tv_sec * 1000000L + pr->deadline.tv_usec;
-            if (near_us < curr_us)
-                pr->deadline = near_dl;
-        }
-    }
-}
-
 static void receive_response(int sockfd, t_hop *hops, uint16_t id,
                               int nqueries, int from_ttl, int to_ttl,
                               int port_base) {
@@ -247,8 +223,6 @@ static void receive_response(int sockfd, t_hop *hops, uint16_t id,
     }
     if (is_dest)
         hop->reached = 1;
-
-    apply_near(hops, ttl_idx, nqueries, from_ttl, to_ttl);
 }
 
 static void print_hop_line(int ttl, t_hop *hop, int nqueries,
@@ -298,6 +272,8 @@ static int create_icmp_socket(const struct s_options *opts) {
     int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     if (sockfd < 0) {
         fprintf(stderr, "ft_traceroute: socket: %s\n", strerror(errno));
+        if (errno == EPERM || errno == EACCES)
+            fprintf(stderr, "ft_traceroute: raw socket requires root privileges\n");
         return -1;
     }
     if (opts->tos) {
@@ -310,7 +286,7 @@ static int create_icmp_socket(const struct s_options *opts) {
     }
     if (opts->iface) {
         if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE,
-                       opts->iface, ft_strlen(opts->iface) + 1) < 0) {
+                       opts->iface, (socklen_t)(ft_strlen(opts->iface) + 1)) < 0) {
             fprintf(stderr, "ft_traceroute: SO_BINDTODEVICE %s: %s\n",
                     opts->iface, strerror(errno));
             close(sockfd);
@@ -343,13 +319,14 @@ static void print_header(const char *target, const char *dest_ip,
 }
 
 /*
- * Pipelined probe loop: up to WINDOW_SIZE hops are in flight at once.
- * A silent hop does not block subsequent ones; we only wait for timeout
- * once across all in-flight hops, not once per hop.
+ * Pipelined probe loop: up to WINDOW_SIZE hops are probed concurrently.
+ * Probes for every in-flight hop share one timeout window, so a burst of
+ * silent hops costs roughly one timeout total rather than one per hop.
+ * Hops are still printed strictly in TTL order.
  */
 static void run_traceroute(int sockfd, struct sockaddr_in *dest,
                             uint16_t id, struct s_options *opts) {
-    long timeout_ms = opts->timeout_sec * 1000L;
+    long timeout_ms = opts->timeout_ms;
 
     t_hop *hops = malloc((size_t)(opts->max_ttl + 1) * sizeof(t_hop));
     if (!hops) {
@@ -407,7 +384,6 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
                 continue;
             hops[ttl].done = 1;
             in_flight--;
-            apply_near(hops, ttl, opts->nqueries, next_to_print, next_to_send - 1);
             if (hops[ttl].reached && ttl < dest_ttl) {
                 dest_ttl = ttl;
                 /* Cancel all probes already sent beyond the destination. */

@@ -5,7 +5,7 @@ int main(int argc, char *argv[]) {
     ft_memset(&opts, 0, sizeof(opts));
     opts.max_ttl     = DEFAULT_MAX_TTL;
     opts.nqueries    = DEFAULT_NQUERIES;
-    opts.timeout_sec = DEFAULT_TIMEOUT_SEC;
+    opts.timeout_ms  = DEFAULT_TIMEOUT_MS;
     opts.window_size = DEFAULT_WINDOW_SIZE;
     opts.do_dns      = 1;
     opts.first_ttl   = DEFAULT_FIRST_TTL;
