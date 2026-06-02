@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
+#include "libft.h"
 
 #define DEFAULT_MAX_TTL      30
 #define DEFAULT_FIRST_TTL     1

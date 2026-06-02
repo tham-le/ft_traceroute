@@ -39,7 +39,7 @@ static void send_probe(int sockfd, struct sockaddr_in *dest,
         return;
     }
     char packet[packet_len];
-    memset(packet, 0, packet_len);
+    ft_memset(packet, 0, packet_len);
     struct icmphdr *icmp   = (struct icmphdr *)packet;
     icmp->type             = ICMP_ECHO;
     icmp->code             = 0;
@@ -260,7 +260,7 @@ static void print_hop_line(int ttl, t_hop *hop, int nqueries,
             if (getnameinfo((struct sockaddr *)&hop->from_addr,
                             sizeof(hop->from_addr),
                             host, sizeof(host), NULL, 0, 0) == 0
-                    && strcmp(host, hop->hop_ip) != 0)
+                    && ft_strcmp(host, hop->hop_ip) != 0)
                 printf("%s (%s)", host, hop->hop_ip);
             else
                 printf("%s", hop->hop_ip);
@@ -280,7 +280,7 @@ static void print_hop_line(int ttl, t_hop *hop, int nqueries,
 
 static int resolve_target(const char *target, struct sockaddr_in *dest) {
     struct addrinfo hints, *res;
-    memset(&hints, 0, sizeof(hints));
+    ft_memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_INET;
     hints.ai_socktype = SOCK_RAW;
     hints.ai_protocol = IPPROTO_ICMP;
@@ -310,7 +310,7 @@ static int create_icmp_socket(const struct s_options *opts) {
     }
     if (opts->iface) {
         if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE,
-                       opts->iface, strlen(opts->iface) + 1) < 0) {
+                       opts->iface, ft_strlen(opts->iface) + 1) < 0) {
             fprintf(stderr, "ft_traceroute: SO_BINDTODEVICE %s: %s\n",
                     opts->iface, strerror(errno));
             close(sockfd);
@@ -319,7 +319,7 @@ static int create_icmp_socket(const struct s_options *opts) {
     }
     if (opts->source) {
         struct sockaddr_in src;
-        memset(&src, 0, sizeof(src));
+        ft_memset(&src, 0, sizeof(src));
         src.sin_family = AF_INET;
         if (inet_pton(AF_INET, opts->source, &src.sin_addr) != 1) {
             fprintf(stderr, "ft_traceroute: invalid source address: %s\n",
@@ -356,7 +356,7 @@ static void run_traceroute(int sockfd, struct sockaddr_in *dest,
         fprintf(stderr, "ft_traceroute: malloc: %s\n", strerror(errno));
         return;
     }
-    memset(hops, 0, (size_t)(opts->max_ttl + 1) * sizeof(t_hop));
+    ft_memset(hops, 0, (size_t)(opts->max_ttl + 1) * sizeof(t_hop));
 
     int next_to_send  = opts->first_ttl;
     int next_to_print = opts->first_ttl;
