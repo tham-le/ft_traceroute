@@ -347,7 +347,17 @@ echo ""
 echo "--- -p: base ICMP sequence ---"
 expect_match "-p 0     localhost"  -p 0     -n -m 2 localhost
 expect_match "-p 1000  localhost"  -p 1000  -n -m 2 localhost
-expect_match "-p 65535 localhost"  -p 65535 -n -m 2 localhost
+# -p 65535 forces a 16-bit sequence wrap (65535, 0, 1). ft maps the wrapped
+# replies back correctly and answers all probes; real traceroute -I drops the
+# wrapping probe, so compare structurally instead of against that reference:
+# hop 1 must reach 127.0.0.1 with all three probes answered (no stars).
+_p_out=$("$FT" -p 65535 -n -m 1 -q 3 localhost 2>&1)
+if echo "$_p_out" | grep -qE '^ *1 +127\.0\.0\.1( +[0-9]+\.[0-9]+ ms){3}$'; then
+    pass "-p 65535: wrap handled, 3 RTTs at hop 1"
+else
+    fail "-p 65535: expected 3 RTTs at hop 1 (wrap not handled)"
+    echo "$_p_out" | sed 's/^/    /'
+fi
 echo ""
 
 # -----------------------------------------------------------------------
