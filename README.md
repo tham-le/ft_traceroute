@@ -17,13 +17,29 @@ Background reading:
 ## Usage
 
 ```
-sudo ./ft_traceroute <host>
+sudo ./ft_traceroute [options] <host> [packetlen]
 sudo ./ft_traceroute --help
 ```
 
-`host` can be an IPv4 address or a hostname. DNS resolution is done once at startup; hop display shows IP addresses only.
+`host` is an IPv4 address or a hostname, resolved once at startup for the header line. By default each hop is reverse-resolved to a hostname, like `traceroute`; pass `-n` to print IP addresses only. An optional `packetlen` operand sets the probe size, same as `-l`.
 
 Root (or `CAP_NET_RAW`) is required to open a raw ICMP socket.
+
+### Options
+
+```
+-f <ttl>    first hop (default 1)
+-m <ttl>    max hops (default 30)
+-q <n>      probes per hop (default 3)
+-w <sec>    per-probe timeout, may be fractional (default 5)
+-N <n>      probes in flight (default 16)
+-n          do not reverse-resolve hop addresses
+-t <tos>    IP type-of-service byte
+-p <seq>    base ICMP sequence number
+-l <len>    total probe packet length in bytes (default 48)
+-s <addr>   source address
+-i <iface>  bind to a network interface
+```
 
 ## Build
 
@@ -35,6 +51,14 @@ make re     # full rebuild
 ```
 
 Requires a C compiler and standard POSIX headers. Tested on Linux.
+
+## Tests
+
+`run_tests.sh` runs the full suite: help, argument errors, and the network behavior of every flag. Run as root for the network tests; without root only the help and argument-error tests run.
+
+```
+sudo ./run_tests.sh
+```
 
 ## Implementation notes
 
