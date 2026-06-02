@@ -13,11 +13,17 @@ FT="$SCRIPT_DIR/ft_traceroute"
 
 PASS=0
 FAIL=0
+SKIP=0
+
+# Set true when the system 'traceroute' is available for output comparison.
+# When false, expect_match tests are skipped so the suite runs standalone.
+HAVE_SYS_TR=false
 
 # -----------------------------------------------------------------------
 # Output helpers
 # -----------------------------------------------------------------------
 pass() { echo "[PASS] $1"; ((PASS++)); }
+skip() { echo "[SKIP] $1"; ((SKIP++)); }
 
 fail() {
     echo "[FAIL] $1"
@@ -112,6 +118,11 @@ expect_header() {
 expect_match() {
     local desc="$1"; shift
     local ft_out sys_out attempt
+    # Standalone mode: no reference tool, nothing to compare against.
+    if [[ $HAVE_SYS_TR != true ]]; then
+        skip "$desc (no system traceroute)"
+        return
+    fi
     # Retry: probes are occasionally dropped on loopback, so a single run of
     # either tool can show a stray "*" where the other shows an RTT. A real
     # mismatch persists across retries; a transient drop does not.
@@ -140,10 +151,7 @@ if [[ ! -x "$FT" ]]; then
     exit 2
 fi
 
-if ! command -v traceroute >/dev/null 2>&1; then
-    echo "error: 'traceroute' not found in PATH" >&2
-    exit 2
-fi
+command -v traceroute >/dev/null 2>&1 && HAVE_SYS_TR=true
 
 IS_ROOT=false
 [[ $EUID -eq 0 ]] && IS_ROOT=true
@@ -151,6 +159,11 @@ IS_ROOT=false
 echo "========================================="
 echo " ft_traceroute test suite"
 [[ $IS_ROOT == true ]] && echo " mode: full (root)" || echo " mode: no-root only"
+if [[ $HAVE_SYS_TR == true ]]; then
+    echo " compare: system traceroute found"
+else
+    echo " compare: no system traceroute (standalone, match tests skipped)"
+fi
 echo "========================================="
 echo ""
 
@@ -207,7 +220,7 @@ if ! $IS_ROOT; then
     echo "Skipping network tests (not root). Re-run with sudo to run all tests."
     echo ""
     echo "========================================="
-    echo " Results: PASS=$PASS  FAIL=$FAIL  SKIP=network"
+    echo " Results: PASS=$PASS  FAIL=$FAIL  SKIP=$SKIP (+network)"
     echo "========================================="
     [[ $FAIL -eq 0 ]]
     exit
@@ -384,6 +397,6 @@ echo ""
 # Summary
 # -----------------------------------------------------------------------
 echo "========================================="
-echo " Results: PASS=$PASS  FAIL=$FAIL"
+echo " Results: PASS=$PASS  FAIL=$FAIL  SKIP=$SKIP"
 echo "========================================="
 [[ $FAIL -eq 0 ]]
