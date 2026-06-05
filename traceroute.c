@@ -1,20 +1,20 @@
 #include "ft_traceroute.h"
 
 typedef struct {
-    struct timeval send_time;
-    struct timeval deadline;
-    int            done;      /* timed out or reply received */
-    int            got_reply;
-    double         rtt;
-    int            is_dest;
+    struct timeval     send_time;
+    struct timeval     deadline;
+    int                done;      /* timed out or reply received */
+    int                got_reply;
+    double             rtt;
+    int                is_dest;
+    struct sockaddr_in from_addr;
+    char               from_ip[INET_ADDRSTRLEN];
 } t_probe;
 
 typedef struct {
-    t_probe            probes[MAX_NQUERIES];
-    struct sockaddr_in from_addr;
-    char               hop_ip[INET_ADDRSTRLEN];
-    int                done;
-    int                reached;
+    t_probe probes[MAX_NQUERIES];
+    int     done;
+    int     reached;
 } t_hop;
 
 static unsigned short checksum(void *data, int len) {
@@ -78,15 +78,15 @@ static void send_hop_probes(int sockfd, struct sockaddr_in *dest,
         pr->send_time = now;
         pr->deadline  = now;
         timeval_add_ms(&pr->deadline, timeout_ms);
-        pr->done      = 0;
-        pr->got_reply = 0;
-        pr->rtt       = 0;
-        pr->is_dest   = 0;
+        pr->done         = 0;
+        pr->got_reply    = 0;
+        pr->rtt          = 0;
+        pr->is_dest      = 0;
+        pr->from_ip[0]   = '\0';
         send_probe(sockfd, dest, ttl, seq_base + p, id, packet_len);
     }
-    hop->hop_ip[0] = '\0';
-    hop->done      = 0;
-    hop->reached   = 0;
+    hop->done    = 0;
+    hop->reached = 0;
 }
 
 static int hop_is_complete(t_hop *hop, int nqueries) {
@@ -216,11 +216,9 @@ static void receive_response(int sockfd, t_hop *hops, uint16_t id,
     probe->got_reply = 1;
     probe->rtt       = time_diff_ms(&probe->send_time, &recv_time);
     probe->is_dest   = is_dest;
+    probe->from_addr = from;
+    snprintf(probe->from_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
 
-    if (hop->hop_ip[0] == '\0') {
-        hop->from_addr = from;
-        snprintf(hop->hop_ip, INET_ADDRSTRLEN, "%s", inet_ntoa(from.sin_addr));
-    }
     if (is_dest)
         hop->reached = 1;
 }
@@ -228,25 +226,33 @@ static void receive_response(int sockfd, t_hop *hops, uint16_t id,
 static void print_hop_line(int ttl, t_hop *hop, int nqueries,
                             const struct s_options *opts) {
     printf("%2d  ", ttl);
-    if (hop->hop_ip[0]) {
-        if (opts->do_dns) {
-            char host[NI_MAXHOST];
-            if (getnameinfo((struct sockaddr *)&hop->from_addr,
-                            sizeof(hop->from_addr),
-                            host, sizeof(host), NULL, 0, 0) == 0
-                    && ft_strcmp(host, hop->hop_ip) != 0)
-                printf("%s (%s)", host, hop->hop_ip);
-            else
-                printf("%s", hop->hop_ip);
-        } else {
-            printf("%s", hop->hop_ip);
-        }
-    }
+    const char *last_ip = "";
+    int         first   = 1;
     for (int i = 0; i < nqueries; i++) {
-        if (hop->probes[i].got_reply)
-            printf("  %.3f ms", hop->probes[i].rtt);
-        else
+        t_probe *pr = &hop->probes[i];
+        if (!pr->got_reply) {
             printf("  *");
+            continue;
+        }
+        if (first || ft_strcmp(pr->from_ip, last_ip) != 0) {
+            if (!first)
+                printf(" ");
+            if (opts->do_dns) {
+                char host[NI_MAXHOST];
+                if (getnameinfo((struct sockaddr *)&pr->from_addr,
+                                sizeof(pr->from_addr),
+                                host, sizeof(host), NULL, 0, 0) == 0
+                        && ft_strcmp(host, pr->from_ip) != 0)
+                    printf("%s (%s)", host, pr->from_ip);
+                else
+                    printf("%s", pr->from_ip);
+            } else {
+                printf("%s", pr->from_ip);
+            }
+            last_ip = pr->from_ip;
+            first   = 0;
+        }
+        printf("  %.3f ms", pr->rtt);
     }
     printf("\n");
     fflush(stdout);
