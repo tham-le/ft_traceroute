@@ -4,9 +4,9 @@ A C reimplementation of `traceroute` for IPv4, built as part of the 42 UNIX proj
 
 ## How it works
 
-Each probe is an ICMP Echo Request sent with a low TTL. Every router that drops the packet because TTL reached zero replies with an ICMP Time Exceeded message, which reveals its IP and lets us measure the round-trip time. The TTL increments from 1 to 30 until the destination replies with an ICMP Echo Reply.
+Probes are UDP datagrams sent with increasing TTL values, starting at 1. Each router that discards a packet because the TTL hit zero replies with an ICMP Time Exceeded message, revealing its IP and round-trip time. When the destination receives the probe it replies with ICMP Port Unreachable, marking the end of the trace. Pass `-I` to use ICMP Echo instead of UDP, same as `traceroute -I`.
 
-Three probes are sent per hop so packet loss and jitter are visible.
+Multiple probes are sent per hop (default 3) so packet loss and jitter are visible. Up to 16 probes fly in parallel by default, so the trace does not wait for each hop to finish before probing the next.
 
 Background reading:
 - [WTF is Traceroute?](https://notes.thamle.live/Networking/Traceroute)
@@ -21,24 +21,20 @@ sudo ./ft_traceroute [options] <host> [packetlen]
 sudo ./ft_traceroute --help
 ```
 
-`host` is an IPv4 address or a hostname, resolved once at startup for the header line. By default each hop is reverse-resolved to a hostname, like `traceroute`; pass `-n` to print IP addresses only. An optional `packetlen` operand sets the probe size, same as `-l`.
-
-Root (or `CAP_NET_RAW`) is required to open a raw ICMP socket.
+`host` is an IPv4 address or hostname. By default each hop address is reverse-resolved to a hostname; pass `-n` to skip DNS. Root (or `CAP_NET_RAW`) is required to open a raw ICMP socket.
 
 ### Options
 
 ```
--f <ttl>    first hop (default 1)
--m <ttl>    max hops (default 30)
--q <n>      probes per hop (default 3)
--w <sec>    per-probe timeout, may be fractional (default 5)
--N <n>      probes in flight (default 16)
--n          do not reverse-resolve hop addresses
--t <tos>    IP type-of-service byte
--p <seq>    base ICMP sequence number
--l <len>    total probe packet length in bytes (default 48)
--s <addr>   source address
--i <iface>  bind to a network interface
+-f, --first=N        Start from hop N (default 1)
+-I, --icmp           Use ICMP Echo instead of UDP
+-m, --max-hops=N     Max hops (default 30)
+-N, --sim-queries=N  Simultaneous probes in flight (default 16)
+-n                   No DNS resolution
+-p, --port=N         Base destination port (default 33434, UDP mode only)
+-q, --queries=N      Probes per hop (default 3)
+-l N                 Packet length in bytes (default 60)
+-h, --help           Show this help
 ```
 
 ## Build
@@ -50,20 +46,13 @@ make fclean # remove objects and binary
 make re     # full rebuild
 ```
 
-Requires a C compiler and standard POSIX headers. Tested on Linux.
-
-## Tests
-
-`run_tests.sh` runs the full suite: help, argument errors, and the network behavior of every flag. Run as root for the network tests; without root only the help and argument-error tests run.
-
-```
-sudo ./run_tests.sh
-```
+Requires GCC and standard POSIX headers. Tested on Linux.
 
 ## Implementation notes
 
-- Uses `select` with a per-probe timeout (no `poll`, `ppoll`, or `fcntl`).
-- ICMP Echo Requests are identified by `getpid() & 0xFFFF` as the ICMP ID so concurrent runs on the same host do not interfere.
-- Time Exceeded responses are validated by checking the embedded original IP and ICMP headers, not just the source address.
-- On QEMU/SLiRP without host raw socket access, intermediate hops may appear as `*` because SLiRP rewrites ICMP IDs when forwarding through ping sockets. The destination hop is unaffected.
-
+- Uses `select` with per-probe deadlines, no `poll`, `ppoll`, or `fcntl`.
+- In UDP mode, each probe gets a unique destination port derived from the base port, hop index, and probe index. ICMP Time Exceeded replies carry the original UDP header so the right probe can be matched without extra socket state.
+- In ICMP mode, the process PID is used as the ICMP ID so concurrent runs on the same host do not interfere.
+- ICMP error responses are validated by parsing the embedded original IP and transport headers, not just the source address.
+- Port arithmetic uses explicit `uint16_t` casts so the sequence wraps correctly past 65535.
+- `checksum` avoids strict-aliasing UB by using `ft_memcpy` instead of pointer punning.
