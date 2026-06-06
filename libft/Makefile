@@ -2,7 +2,7 @@ NAME	=	libft.a
 CC		=	cc
 CFLAGS	=	-Wall -Wextra -Werror
 
-SRC		=	ft_memset.c ft_strlen.c ft_strcmp.c ft_strncmp.c ft_atoi.c
+SRC		=	ft_memset.c ft_memcpy.c ft_strlen.c ft_strcmp.c ft_strncmp.c ft_atoi.c
 OBJ		=	$(SRC:.c=.o)
 
 all: $(NAME)

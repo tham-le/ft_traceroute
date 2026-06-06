@@ -1,8 +1,6 @@
 #ifndef FT_TRACEROUTE_H
 #define FT_TRACEROUTE_H
 
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
