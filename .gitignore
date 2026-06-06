@@ -1,3 +1,6 @@
 ft_traceroute
 *.o
 *.a
+requirement*.md
+run_tests.sh
+
