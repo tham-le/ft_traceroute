@@ -36,4 +36,7 @@ re: fclean all
 docker:
 	docker build -t ft_traceroute .
 
-.PHONY: all clean fclean re docker
+docker-shell:
+	docker run -it --rm --cap-add=NET_RAW --entrypoint sh ft_traceroute
+
+.PHONY: all clean fclean re docker docker-shell
