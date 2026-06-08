@@ -10,6 +10,6 @@ Vagrant.configure("2") do |config|
 
   config.vm.provision "shell", inline: <<-SHELL
     apt-get update -q
-    apt-get install -y --no-install-recommends gcc make libc6-dev traceroute
+    apt-get install -y --no-install-recommends gcc make libc6-dev inetutils-traceroute
   SHELL
 end
