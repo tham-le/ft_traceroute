@@ -50,13 +50,15 @@ Requires GCC and standard POSIX headers. Tested on Linux.
 
 ## Docker
 
+Requires a standard (root) Docker daemon. Rootless Docker does not support raw sockets because the network backend runs in userspace and cannot grant real `CAP_NET_RAW`.
+
 ```
-make docker          # build the image
-./docker_run.sh 8.8.8.8
-./docker_run.sh -I -n 8.8.8.8
+make docker              # build the image
+./docker_run.sh 8.8.8.8  # run
+make docker-shell        # interactive shell for manual testing
 ```
 
-The wrapper script handles the raw socket capability that `sudo` covers on the host.
+The wrapper script handles the raw socket capability. Inside the shell, both `./ft_traceroute` and `traceroute` are available for comparison.
 
 ## Implementation notes
 
