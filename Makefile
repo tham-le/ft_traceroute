@@ -39,4 +39,13 @@ docker:
 docker-shell: docker
 	docker run -it --rm --cap-add=NET_RAW --entrypoint bash ft_traceroute
 
-.PHONY: all clean fclean re docker docker-shell
+vm:
+	vagrant up
+
+vm-ssh:
+	vagrant ssh
+
+vm-clean:
+	vagrant destroy -f
+
+.PHONY: all clean fclean re docker docker-shell vm vm-ssh vm-clean

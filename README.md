@@ -59,6 +59,28 @@ make docker-shell # interactive shell for testing
 
 Inside the shell, both `./ft_traceroute` and `traceroute` are available for comparison.
 
+## Vagrant (for machines without root Docker)
+
+Requires VirtualBox and Vagrant (available on 42 school machines).
+
+```
+make vm      # start the Debian VM (first run downloads the box)
+make vm-ssh  # SSH into the VM
+```
+
+Inside the VM:
+```
+cd /vagrant
+make
+sudo ./ft_traceroute 8.8.8.8
+traceroute 8.8.8.8
+```
+
+The project directory is automatically shared at `/vagrant`. To stop the VM:
+```
+make vm-clean
+```
+
 ## Implementation notes
 
 - Uses `select` with per-probe deadlines, no `poll`, `ppoll`, or `fcntl`.
