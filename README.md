@@ -53,12 +53,11 @@ Requires GCC and standard POSIX headers. Tested on Linux.
 Requires a standard (root) Docker daemon. Rootless Docker does not support raw sockets because the network backend runs in userspace and cannot grant real `CAP_NET_RAW`.
 
 ```
-make docker              # build the image
-./docker_run.sh 8.8.8.8  # run
-make docker-shell        # interactive shell for manual testing
+make docker       # build the image
+make docker-shell # interactive shell for testing
 ```
 
-The wrapper script handles the raw socket capability. Inside the shell, both `./ft_traceroute` and `traceroute` are available for comparison.
+Inside the shell, both `./ft_traceroute` and `traceroute` are available for comparison.
 
 ## Implementation notes
 
