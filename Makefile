@@ -33,4 +33,7 @@ fclean:	clean
 
 re: fclean all
 
-.PHONY: all clean fclean re
+docker:
+	docker build -t ft_traceroute .
+
+.PHONY: all clean fclean re docker

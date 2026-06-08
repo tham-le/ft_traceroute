@@ -48,6 +48,16 @@ make re     # full rebuild
 
 Requires GCC and standard POSIX headers. Tested on Linux.
 
+## Docker
+
+```
+make docker          # build the image
+./docker_run.sh 8.8.8.8
+./docker_run.sh -I -n 8.8.8.8
+```
+
+The wrapper script handles the raw socket capability that `sudo` covers on the host.
+
 ## Implementation notes
 
 - Uses `select` with per-probe deadlines, no `poll`, `ppoll`, or `fcntl`.
