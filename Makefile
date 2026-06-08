@@ -37,6 +37,6 @@ docker:
 	docker build -t ft_traceroute .
 
 docker-shell:
-	docker run -it --rm --cap-add=NET_RAW --entrypoint sh ft_traceroute
+	docker run -it --rm --cap-add=NET_RAW --entrypoint bash ft_traceroute
 
 .PHONY: all clean fclean re docker docker-shell
