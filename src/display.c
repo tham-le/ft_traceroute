@@ -3,8 +3,8 @@
 
 void print_header(const char *target, const char *dest_ip,
                   const t_options *opts) {
-    printf("traceroute to %s (%s), %d hops max, %d byte packets\n",
-           target, dest_ip, opts->max_ttl, opts->packet_len);
+    printf("traceroute to %s (%s), %d hops max\n",
+           target, dest_ip, opts->max_ttl);
 }
 
 static void print_host(t_packet *pkt, int do_dns) {
@@ -25,7 +25,7 @@ static void print_host(t_packet *pkt, int do_dns) {
 void print_hop_line(int ttl, t_hop *hop, int nqueries, int do_dns) {
     const char *last_ip = "";
 
-    printf("%2d ", ttl);
+    printf("%3d  ", ttl);
     for (int i = 0; i < nqueries; i++) {
         t_packet *pkt = &hop->packets[i];
 
@@ -40,7 +40,7 @@ void print_hop_line(int ttl, t_hop *hop, int nqueries, int do_dns) {
             last_ip = pkt->from_ip;
         }
 
-        printf("  %.3f ms", pkt->rtt);
+        printf("  %.3fms", pkt->rtt);
     }
     printf("\n");
     fflush(stdout);

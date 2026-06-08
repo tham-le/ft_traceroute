@@ -16,7 +16,7 @@
 #include <netinet/udp.h>
 #include "libft.h"
 
-#define DEFAULT_MAX_TTL     30
+#define DEFAULT_MAX_TTL     64
 #define DEFAULT_FIRST_TTL    1
 #define DEFAULT_NQUERIES     3
 #define DEFAULT_SQUERIES    16
@@ -27,7 +27,7 @@
 #define MIN_PACKET_LEN       28
 #define MAX_PACKET_SIZE    4096
 #define MAX_NQUERIES         10
-#define TIMEOUT_MS         5000
+#define DEFAULT_TIMEOUT_MS 3000
 
 typedef struct s_options {
     int max_ttl;
@@ -36,6 +36,7 @@ typedef struct s_options {
     int squeries;
     int port;
     int packet_len;
+    int timeout_ms;
     int do_dns;
     int icmp_mode;
 } t_options;

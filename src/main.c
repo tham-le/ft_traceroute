@@ -9,6 +9,7 @@ int main(int argc, char *argv[]) {
     opts.nqueries   = DEFAULT_NQUERIES;
     opts.squeries   = DEFAULT_SQUERIES;
     opts.packet_len = DEFAULT_PACKET_LEN;
+    opts.timeout_ms = DEFAULT_TIMEOUT_MS;
     opts.do_dns     = 1;
     opts.port       = -1;
 

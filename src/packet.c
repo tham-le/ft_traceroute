@@ -41,7 +41,7 @@ void send_hop_packets(int send_sock, struct sockaddr_in *dest,
         t_packet *pkt = &hop->packets[i];
         pkt->send_time = now;
         pkt->deadline  = now;
-        timeval_add_ms(&pkt->deadline, TIMEOUT_MS);
+        timeval_add_ms(&pkt->deadline, opts->timeout_ms);
 
         if (opts->icmp_mode)
             send_icmp_packet(send_sock, dest, base + i, id, opts->packet_len);

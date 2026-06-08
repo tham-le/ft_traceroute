@@ -2,18 +2,17 @@
 #include "ft_traceroute.h"
 
 static void help(void) {
-    printf("Usage: ft_traceroute [-In] [-f first_ttl] [-m max_ttl] [-N squeries]\n"
-           "                     [-p port] [-q nqueries] [-l packetlen] host [packetlen]\n"
+    printf("Usage: ft_traceroute [-InI] [-f first_ttl] [-m max_ttl] [-p port]\n"
+           "                     [-q tries] [-w wait] host\n"
            "\n"
            "Options:\n"
            "  -f, --first=N        Start from hop N (default 1)\n"
            "  -I, --icmp           Use ICMP ECHO instead of UDP\n"
-           "  -m, --max-hops=N     Max hops (default 30)\n"
-           "  -N, --sim-queries=N  Simultaneous packets (default 16)\n"
+           "  -m, --max-hop=N      Max hops (default 64)\n"
            "  -n                   No DNS resolution\n"
            "  -p, --port=N         Destination port (default 33434)\n"
-           "  -q, --queries=N      Probes per hop (default 3)\n"
-           "  -l N                 Packet length (default 60)\n"
+           "  -q, --tries=N        Probes per hop (default 3)\n"
+           "  -w, --wait=N         Seconds to wait for response (default 3)\n"
            "  -h, --help           Show this help\n");
     exit(0);
 }
@@ -27,11 +26,11 @@ typedef struct {
 } t_flag;
 
 static const t_flag g_flags[] = {
-    { "-f", "--first",       offsetof(t_options, first_ttl),  1,             255            },
-    { "-m", "--max-hops",    offsetof(t_options, max_ttl),    1,             255            },
-    { "-N", "--sim-queries", offsetof(t_options, squeries),   1,             128            },
-    { "-p", "--port",        offsetof(t_options, port),       0,             65535          },
-    { "-q", "--queries",     offsetof(t_options, nqueries),   1,             MAX_NQUERIES   },
+    { "-f", "--first",       offsetof(t_options, first_ttl),  1,  255          },
+    { "-m", "--max-hop",     offsetof(t_options, max_ttl),    1,  255          },
+    { "-N", "--sim-queries", offsetof(t_options, squeries),   1,  128          },
+    { "-p", "--port",        offsetof(t_options, port),       0,  65535        },
+    { "-q", "--tries",       offsetof(t_options, nqueries),   1,  MAX_NQUERIES },
     { "-l", NULL,            offsetof(t_options, packet_len), MIN_PACKET_LEN, MAX_PACKET_SIZE },
 };
 
@@ -130,10 +129,17 @@ const char *parse_arguments(int argc, char *argv[], t_options *opts) {
     int         i      = 1;
 
     for (; i < argc; i++) {
-        if (ft_strcmp(argv[i], "--help") == 0 || ft_strcmp(argv[i], "-h") == 0)
+        if (ft_strcmp(argv[i], "--help") == 0 || ft_strcmp(argv[i], "-h") == 0
+            || ft_strcmp(argv[i], "-?") == 0 || ft_strcmp(argv[i], "--usage") == 0)
             help();
         else if (ft_strcmp(argv[i], "-n") == 0)
             opts->do_dns = 0;
+        else if (ft_strcmp(argv[i], "-w") == 0 || ft_strncmp(argv[i], "--wait=", 7) == 0) {
+            const char *val = (argv[i][1] == 'w' && argv[i][2] == '\0')
+                ? (++i < argc ? argv[i] : NULL) : argv[i] + 7;
+            if (!val) { fprintf(stderr, "ft_traceroute: -w requires an argument\n"); exit(1); }
+            opts->timeout_ms = parse_int(val, 1, 3600, "-w") * 1000;
+        }
         else if (ft_strcmp(argv[i], "-I") == 0 || ft_strcmp(argv[i], "--icmp") == 0)
             opts->icmp_mode = 1;
         else if (!try_flags(argv[i], argc, argv, &i, opts)) {
