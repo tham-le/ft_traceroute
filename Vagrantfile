@@ -10,10 +10,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.provision "shell", inline: <<-SHELL
     apt-get update -q
+    apt-get remove -y traceroute 2>/dev/null || true
     apt-get install -y --no-install-recommends gcc make libc6-dev inetutils-traceroute
-  SHELL
-
-  config.vm.provision "shell", run: "always", inline: <<-SHELL
-    ip route del default via 10.0.2.2 2>/dev/null || true
   SHELL
 end
